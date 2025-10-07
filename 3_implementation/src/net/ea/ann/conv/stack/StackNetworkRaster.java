@@ -156,15 +156,15 @@ public class StackNetworkRaster extends StackNetworkImpl {
 
 	
 	@Override
-	public NeuronValue[] learnOne(Iterable<Record> sample, double learningRate, double terminatedThreshold, int maxIteration) {
-		NeuronValue[] error0 = super.learnOne(sample, learningRate, terminatedThreshold, maxIteration);
+	public NeuronValue[] learnOneByOne(Iterable<Record> sample, double learningRate, double terminatedThreshold, int maxIteration) {
+		NeuronValue[] error0 = super.learnOneByOne(sample, learningRate, terminatedThreshold, maxIteration);
 
 		if (unifiedContentToRaster == null || stacks.size() == 0) return error0;
 		try {
 			if (isDoStarted()) return error0;
 		} catch (Throwable e) {Util.trace(e);}
 		
-		maxIteration = maxIteration >= 0 ? maxIteration :  LEARN_MAX_ITERATION_DEFAULT;
+		maxIteration = maxIteration >= 0 ? maxIteration :  LEARN_MAX_ITERATION_MAX;
 		terminatedThreshold = Double.isNaN(terminatedThreshold) || terminatedThreshold < 0 ? LEARN_TERMINATED_THRESHOLD_DEFAULT : terminatedThreshold;
 		learningRate = Double.isNaN(learningRate) || learningRate <= 0 || learningRate > 1 ? LEARN_RATE_DEFAULT : learningRate;
 		
@@ -172,10 +172,10 @@ public class StackNetworkRaster extends StackNetworkImpl {
 		int iteration = 0;
 		doStarted = true;
 		while (doStarted && (maxIteration <= 0 || iteration < maxIteration)) {
-			sample = resample(sample, iteration); //Re-sampling.
-			double lr = calcLearningRate(learningRate, iteration);
+			Iterable<Record> subsample = resample(sample, iteration, maxIteration); //Re-sampling.
+			double lr = calcLearningRate(learningRate, iteration+1);
 
-			for (Record record : sample) {
+			for (Record record : subsample) {
 				if (record == null) continue;
 				
 				//Evaluating layers.
@@ -239,18 +239,18 @@ public class StackNetworkRaster extends StackNetworkImpl {
 			if (isDoStarted()) return error;
 		} catch (Throwable e) {Util.trace(e);}
 		
-		maxIteration = maxIteration >= 0 ? maxIteration :  LEARN_MAX_ITERATION_DEFAULT;
+		maxIteration = maxIteration >= 0 ? maxIteration :  LEARN_MAX_ITERATION_MAX;
 		terminatedThreshold = Double.isNaN(terminatedThreshold) || terminatedThreshold < 0 ? LEARN_TERMINATED_THRESHOLD_DEFAULT : terminatedThreshold;
 		learningRate = Double.isNaN(learningRate) || learningRate <= 0 || learningRate > 1 ? LEARN_RATE_DEFAULT : learningRate;
 		
 		int iteration = 0;
 		doStarted = true;
 		while (doStarted && (maxIteration <= 0 || iteration < maxIteration)) {
-			sample = resample(sample, iteration); //Re-sampling.
-			double lr = calcLearningRate(learningRate, iteration);
+			Iterable<Record> subsample = resample(sample, iteration, maxIteration); //Re-sampling.
+			double lr = calcLearningRate(learningRate, iteration+1);
 
 			List<Record> newSample = Util.newList(0);
-			for (Record record : sample) {
+			for (Record record : subsample) {
 				if (record == null) continue;
 				
 				//Evaluating layers.

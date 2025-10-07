@@ -52,13 +52,13 @@ public abstract class MatrixNetworkAbstract extends NetworkAbstract implements M
 	/**
 	 * Name of vectorization field.
 	 */
-	final static String VECTORIZED_FIELD = "mane_vectorized";
+	public final static String VECTORIZED_FIELD = "mane_vectorized";
 	
 	
 	/**
 	 * Default value of vectorization field.
 	 */
-	final static boolean VECTORIZED_DEFAULT = false;
+	public final static boolean VECTORIZED_DEFAULT = false;
 
 	
 	/**
@@ -100,17 +100,14 @@ public abstract class MatrixNetworkAbstract extends NetworkAbstract implements M
 	 */
 	public MatrixNetworkAbstract(int neuronChannel, Function activateRef, Function convActivateRef, Id idRef) {
 		super(idRef);
-		this.config.put(LEARN_MAX_ITERATION_FIELD, 1);
+		this.config.put(LEARN_MAX_ITERATION_FIELD, LEARN_MAX_ITERATION_DEFAULT);
 		this.config.put(Raster.NORM_FIELD, Raster.NORM_DEFAULT);
 		this.config.put(Image.ALPHA_FIELD, Image.ALPHA_DEFAULT);
 		this.config.put(LARGE_SCALE_FIELD, LARGE_SCALE_DEFAULT);
 		this.config.put(VECTORIZED_FIELD, VECTORIZED_DEFAULT);
 		this.config.put(MatrixLayerAbstract.LEARN_FILTER_FIELD, MatrixLayerAbstract.LEARN_FILTER_DEFAULT);
 
-		if (neuronChannel < 1)
-			this.neuronChannel = neuronChannel = 1;
-		else
-			this.neuronChannel = neuronChannel;
+		this.neuronChannel = neuronChannel = (neuronChannel < 1 ? 1 : neuronChannel);
 		this.activateRef = activateRef == null ? (activateRef = Raster.toActivationRef(this.neuronChannel, isNorm())) : activateRef;
 		this.convActivateRef = convActivateRef == null ? (convActivateRef = Raster.toConvActivationRef(this.neuronChannel, isNorm())) : convActivateRef;
 	}
@@ -298,7 +295,7 @@ public abstract class MatrixNetworkAbstract extends NetworkAbstract implements M
 	 * Checking whether something normalized in rang [0, 1].
 	 * @return whether something normalized in rang [0, 1].
 	 */
-	boolean isNorm() {
+	protected boolean isNorm() {
 		if (config.containsKey(Raster.NORM_FIELD))
 			return config.getAsBoolean(Raster.NORM_FIELD);
 		else

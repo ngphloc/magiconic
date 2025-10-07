@@ -60,12 +60,57 @@ public class MatrixNetworkAssoc implements Cloneable, Serializable {
 
 	
 	/**
+	 * Initializing parameters.
+	 */
+	public void initParams() {
+		for (int i = 0; i < mane.layers.length; i++) {
+			MatrixLayerAbstract layer = mane.layers[i];
+			if (layer instanceof MatrixLayerImpl)
+				new MatrixLayerAssoc((MatrixLayerImpl)layer).initParams();
+		}
+	}
+	
+	
+	/**
+	 * Initializing parameters by specified value.
+	 * @param v value.
+	 */
+	public void initParams(double v) {
+		for (int i = 0; i < mane.layers.length; i++) {
+			MatrixLayerAbstract layer = mane.layers[i];
+			if (layer instanceof MatrixLayerImpl)
+				new MatrixLayerAssoc((MatrixLayerImpl)layer).initParams(v);
+		}
+	}
+
+
+	/**
+	 * Getting size of parameters.
+	 * @return size of parameters.
+	 */
+	public int sizeOfParams() {
+		int size = 0;
+		for (int i = 0; i < mane.layers.length; i++) {
+			if (!(mane.layers[i] instanceof MatrixLayerImpl)) continue;
+			MatrixLayerImpl layer = (MatrixLayerImpl)mane.layers[i];
+			if (layer.weight1 != null) size += layer.weight1.rows()*layer.weight1.columns();
+			if (layer.weight2 != null) size += layer.weight2.rows()*layer.weight2.columns();
+			if (layer.bias != null) size += layer.bias.rows()*layer.bias.columns();
+			
+			if (layer.filter != null) size += layer.filter.height()*layer.filter.width();
+			if (layer.filterBias != null) size++;
+		}
+		return size;
+	}
+	
+	
+	/**
 	 * Test of transformation.
 	 * @param in input stream.
 	 * @param out output stream.
 	 * @throws RemoteException if any error raises.
 	 */
-	public static void gen(InputStream in, OutputStream out) throws Exception {
+	public static void transform(InputStream in, OutputStream out) throws Exception {
 		@SuppressWarnings("resource")
 		Scanner scanner = new Scanner(in);
 		PrintStream printer = new PrintStream(out);
@@ -110,7 +155,7 @@ public class MatrixNetworkAssoc implements Cloneable, Serializable {
 		if (lr <= 0 || lr > 1) lr = defaultlr;
 		printer.println("Starting learning rate is " + lr + "\n");
 
-		int defaultMaxIteration = 3;
+		int defaultMaxIteration = Network.LEARN_MAX_ITERATION_DEFAULT;
 		int maxIteration = defaultMaxIteration;
 		printer.print("Max iteration (default " + maxIteration + "):");
 		try {
@@ -235,17 +280,5 @@ public class MatrixNetworkAssoc implements Cloneable, Serializable {
 		printer.println("Finished.");
 	}
 
-	
-	/**
-	 * Main method.
-	 * @param args array of arguments.
-	 */
-	public static void main(String[] args) {
-		try {
-			gen(System.in, System.out);
-		}
-		catch (Throwable e) {Util.trace(e);}
-	}
-	
 	
 }

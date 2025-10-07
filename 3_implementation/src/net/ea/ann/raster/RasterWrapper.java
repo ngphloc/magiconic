@@ -62,6 +62,12 @@ public class RasterWrapper implements Raster {
 
 	
 	@Override
+	public int id() {
+		return raster.id();
+	}
+
+
+	@Override
 	public int getWidth() {
 		return raster.getWidth();
 	}
@@ -166,6 +172,13 @@ public class RasterWrapper implements Raster {
 		else
 			return name.contains(".") ? name.substring(0, name.lastIndexOf(".")) : name;
 	}
+	
+	
+	/**
+	 * Getting raster.
+	 * @return raster.
+	 */
+	public Raster getRaster() {return raster;}
 	
 	
 }

@@ -12,6 +12,7 @@ import java.rmi.NoSuchObjectException;
 import java.rmi.Remote;
 import java.rmi.RemoteException;
 import java.rmi.server.UnicastRemoteObject;
+import java.util.List;
 
 /**
  * This class is basic abstract implementation of neural network.
@@ -62,7 +63,7 @@ public abstract class NetworkAbstract implements Network, Serializable {
 	/**
 	 * Default value of learning rate fixed field.
 	 */
-	public final static boolean LEARN_RATE_FIXED_DEFAULT = false;
+	public final static boolean LEARN_RATE_FIXED_DEFAULT = true;
 
 	
 	/**
@@ -90,9 +91,33 @@ public abstract class NetworkAbstract implements Network, Serializable {
 	
 	
 	/**
+	 * Name of re-sampling rating field.
+	 */
+	public final static String RESAMPLE_RATE_FILED = "net_resample_rate";
+	
+	
+	/**
+	 * Default value of re-sampling rating field.
+	 */
+	public final static double RESAMPLE_RATE_DEFAULT = 1;
+	
+	
+	/**
+	 * Name of pseudo-epochs field.
+	 */
+	public final static String EPOCHS_PSEUDO_FILED = "net_epochs_pseudo";
+	
+	
+	/**
+	 * Default value of pseudo-epochs field.
+	 */
+	public final static int EPOCHS_PSEUDO_DEFAULT = 1;
+
+	
+	/**
 	 * Default value of zoom-out.
 	 */
-	public final static int ZOOMOUT_DEFAULT = 3;
+	public final static int ZOOMOUT_DEFAULT = 2;
 
 	
 	/**
@@ -165,7 +190,9 @@ public abstract class NetworkAbstract implements Network, Serializable {
 		config.put(LEARN_RATE_FIELD, LEARN_RATE_DEFAULT);
 		config.put(LEARN_TERMINATE_ERROR_FIELD, LEARN_TERMINATE_ERROR_DEFAULT);
 		config.put(RESAMPLE_FILED, RESAMPLE_DEFAULT);
+		config.put(RESAMPLE_RATE_FILED, RESAMPLE_RATE_DEFAULT);
 		config.put(LEARN_RATE_FIXED_FIELD, LEARN_RATE_FIXED_DEFAULT);
+		config.put(EPOCHS_PSEUDO_FILED, EPOCHS_PSEUDO_DEFAULT);
 
 		if (idRef != null) this.idRef = idRef;
 	}
@@ -184,18 +211,29 @@ public abstract class NetworkAbstract implements Network, Serializable {
 	 * @param <T> record type.
 	 * @param records specified records.
 	 * @param iteration current iteration.
+	 * @param maxIteration maximum iteration
 	 * @return re-sampled sample.
 	 */
-	protected <T> Iterable<T> resample(Iterable<T> records, int iteration) {
-		if (!config.getAsBoolean(RESAMPLE_FILED)) return records;
-		
-		//Fixing here.
-		if (iteration <= 1) {
-			return records;
+	protected <T> Iterable<T> resample(Iterable<T> records, int iteration, int maxIteration) {
+		List<T> sample = null;
+		if (config.getAsBoolean(RESAMPLE_FILED)) {
+			double resampleRate = paramGetResampleRate();
+			sample = Record.resample(records, resampleRate);
 		}
 		else {
-			return Record.resample(records);
+			sample = Record.listOf(records);
 		}
+		if (maxIteration <= 1) return sample;
+		
+		int sampleSize = Record.sizeOf(records);
+		int batchSize = sampleSize / maxIteration;
+		if (batchSize == 0) return sample;
+		iteration = iteration < 0 ? 0 : iteration;
+		iteration = iteration >= maxIteration ? maxIteration-1 : iteration;
+		int index = iteration*batchSize;
+		int length = index + batchSize;
+		length = length >= sample.size() ? sample.size() : length;
+		return sample.subList(index, length);
 	}
 	
 	
@@ -206,7 +244,9 @@ public abstract class NetworkAbstract implements Network, Serializable {
 	 * @return learning rate.
 	 */
 	protected double calcLearningRate(double initialLearningRate, int iteration) {
-		return calcLearningRate(initialLearningRate, iteration, config.getAsBoolean(LEARN_RATE_FIXED_FIELD));
+		boolean fixedLearningRate = LEARN_RATE_FIXED_DEFAULT;
+		if (config.containsKey(LEARN_RATE_FIXED_FIELD)) fixedLearningRate = config.getAsBoolean(LEARN_RATE_FIXED_FIELD);
+		return calcLearningRate(initialLearningRate, iteration, fixedLearningRate);
 	}
 	
 	
@@ -229,7 +269,7 @@ public abstract class NetworkAbstract implements Network, Serializable {
 	 * Getting learning rate.
 	 * @return learning rate.
 	 */
-	public double getLearingRate() {
+	public double paramGetLearningRate() {
 		double learningRate = config.getAsReal(LEARN_RATE_FIELD);
 		return Double.isNaN(learningRate) || learningRate <= 0 || learningRate > 1 ? LEARN_RATE_DEFAULT : learningRate;
 	}
@@ -240,9 +280,93 @@ public abstract class NetworkAbstract implements Network, Serializable {
 	 * @param learningRate learning rate.
 	 * @return this network.
 	 */
-	public NetworkAbstract setParamLearingRate(double learningRate) {
+	public NetworkAbstract paramSetLearningRate(double learningRate) {
 		learningRate = Double.isNaN(learningRate) || learningRate <= 0 || learningRate > 1 ? LEARN_RATE_DEFAULT : learningRate;
 		config.put(LEARN_RATE_FIELD, learningRate);
+		return this;
+	}
+	
+	
+	/**
+	 * Getting re-sampling rate.
+	 * @return re-sampling rate.
+	 */
+	public double paramGetResampleRate() {
+		double resampleRate = config.getAsReal(RESAMPLE_RATE_FILED);
+		return Double.isNaN(resampleRate) || resampleRate <= 0 || resampleRate > 1 ? RESAMPLE_RATE_DEFAULT : resampleRate;
+	}
+
+	
+	/**
+	 * Getting maximum iteration.
+	 * @return maximum iteration.
+	 */
+	public int paramGetMaxIteration() {
+		int maxIteration = config.getAsInt(LEARN_MAX_ITERATION_FIELD);
+		return maxIteration >= 0 ? maxIteration :  LEARN_MAX_ITERATION_MAX;
+	}
+
+	
+	/**
+	 * Setting maximum iteration.
+	 * @param maxIteration maximum iteration.
+	 * @return this network.
+	 */
+	public NetworkAbstract paramSetMaxIteration(int maxIteration) {
+		maxIteration = maxIteration >= 0 ? maxIteration :  LEARN_MAX_ITERATION_MAX;
+		config.put(LEARN_MAX_ITERATION_FIELD, maxIteration);
+		return this;
+	}
+	
+	
+	/**
+	 * Getting pseudo-epochs.
+	 * @return pseudo-epochs.
+	 */
+	public int paramGetPseudoEpochs() {
+		int pseudoEpochs = config.getAsInt(EPOCHS_PSEUDO_FILED);
+		return pseudoEpochs > 0 ? pseudoEpochs : EPOCHS_PSEUDO_DEFAULT;
+	}
+
+	
+	/**
+	 * Setting maximum iteration.
+	 * @param maxIteration maximum iteration.
+	 * @return this network.
+	 */
+	public NetworkAbstract paramSetPseudoEpochs(int pseudoEpochs) {
+		pseudoEpochs = pseudoEpochs > 0 ? pseudoEpochs :  EPOCHS_PSEUDO_DEFAULT;
+		config.put(EPOCHS_PSEUDO_FILED, pseudoEpochs);
+		return this;
+	}
+
+	
+	/**
+	 * Getting batches.
+	 * @return batches.
+	 */
+	public int paramGetBatches() {
+		return paramGetMaxIteration();
+	}
+
+	
+	/**
+	 * Setting batches.
+	 * @param batches batches.
+	 * @return this network.
+	 */
+	public NetworkAbstract paramSetBatches(int batches) {
+		return paramSetMaxIteration(batches);
+	}
+	
+	
+	/**
+	 * Including parameters from other network.
+	 * @param other other network.
+	 * @return this network.
+	 */
+	public NetworkAbstract paramSetInclude(NetworkAbstract other) {
+		this.config.putAll(other.config);
 		return this;
 	}
 	

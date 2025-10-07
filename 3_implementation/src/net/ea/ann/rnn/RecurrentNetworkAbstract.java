@@ -501,11 +501,11 @@ public abstract class RecurrentNetworkAbstract extends NetworkAbstract implement
 	
 	
 	@Override
-	public NeuronValue[] learnOne(Iterable<List<Record>> sample) throws RemoteException {
+	public NeuronValue[] learnOneByOne(Iterable<List<Record>> sample) throws RemoteException {
 		int maxIteration = config.getAsInt(LEARN_MAX_ITERATION_FIELD);
 		double terminatedThreshold = config.getAsReal(LEARN_TERMINATED_THRESHOLD_FIELD);
-		double learningRate = config.getAsReal(LEARN_RATE_FIELD);
-		return learnOne(sample, learningRate, terminatedThreshold, maxIteration);
+		double learningRate = paramGetLearningRate();
+		return learnOneByOne(sample, learningRate, terminatedThreshold, maxIteration);
 	}
 
 	
@@ -513,7 +513,7 @@ public abstract class RecurrentNetworkAbstract extends NetworkAbstract implement
 	public NeuronValue[] learn(Iterable<List<Record>> sample) throws RemoteException {
 		int maxIteration = config.getAsInt(LEARN_MAX_ITERATION_FIELD);
 		double terminatedThreshold = config.getAsReal(LEARN_TERMINATED_THRESHOLD_FIELD);
-		double learningRate = config.getAsReal(LEARN_RATE_FIELD);
+		double learningRate = paramGetLearningRate();
 		return learn(sample, learningRate, terminatedThreshold, maxIteration);
 	}
 
@@ -526,12 +526,12 @@ public abstract class RecurrentNetworkAbstract extends NetworkAbstract implement
 	 * @param maxIteration maximum iteration.
 	 * @return learned error.
 	 */
-	public NeuronValue[] learnOne(Iterable<List<Record>> sample, double learningRate, double terminatedThreshold, int maxIteration) {
+	public NeuronValue[] learnOneByOne(Iterable<List<Record>> sample, double learningRate, double terminatedThreshold, int maxIteration) {
 		try {
 			if (isDoStarted()) return null;
 		} catch (Throwable e) {Util.trace(e);}
 		
-		maxIteration = maxIteration >= 0 ? maxIteration :  LEARN_MAX_ITERATION_DEFAULT;
+		maxIteration = maxIteration >= 0 ? maxIteration :  LEARN_MAX_ITERATION_MAX;
 		terminatedThreshold = Double.isNaN(terminatedThreshold) || terminatedThreshold < 0 ? LEARN_TERMINATED_THRESHOLD_DEFAULT : terminatedThreshold;
 		learningRate = Double.isNaN(learningRate) || learningRate <= 0 || learningRate > 1 ? LEARN_RATE_DEFAULT : learningRate;
 		
@@ -539,14 +539,14 @@ public abstract class RecurrentNetworkAbstract extends NetworkAbstract implement
 		int iteration = 0;
 		doStarted = true;
 		while (doStarted && (maxIteration <= 0 || iteration < maxIteration)) {
-			double lr = calcLearningRate(learningRate, iteration);
-			sample = resample(sample, iteration);
+			double lr = calcLearningRate(learningRate, iteration+1);
+			Iterable<List<Record>> subsample = resample(sample, iteration, maxIteration);
 
-			for (List<Record> records : sample) {
+			for (List<Record> records : subsample) {
 				if (records == null) continue;
 				for (int i = 0; i < states.size() && i < records.size(); i++) {
 					State state = states.get(i);
-					error = state.learnOne(Arrays.asList(records.get(i)), lr, terminatedThreshold, 1);
+					error = state.learnOneByOne(Arrays.asList(records.get(i)), lr, terminatedThreshold, 1);
 				}
 			}
 			
@@ -557,7 +557,7 @@ public abstract class RecurrentNetworkAbstract extends NetworkAbstract implement
 
 			if (error == null || error.length == 0 || (iteration >= maxIteration && maxIteration == 1))
 				doStarted = false;
-			else if (terminatedThreshold > 0 && config.isBooleanValue(LEARN_TERMINATE_ERROR_FIELD)) {
+			else if (terminatedThreshold > 0 && config.getAsBoolean(LEARN_TERMINATE_ERROR_FIELD)) {
 				double errorMean = NeuronValue.normMean(error);
 				if (errorMean < terminatedThreshold) doStarted = false;
 			}
@@ -600,7 +600,7 @@ public abstract class RecurrentNetworkAbstract extends NetworkAbstract implement
 			if (isDoStarted()) return null;
 		} catch (Throwable e) {Util.trace(e);}
 		
-		maxIteration = maxIteration >= 0 ? maxIteration :  LEARN_MAX_ITERATION_DEFAULT;
+		maxIteration = maxIteration >= 0 ? maxIteration :  LEARN_MAX_ITERATION_MAX;
 		terminatedThreshold = Double.isNaN(terminatedThreshold) || terminatedThreshold < 0 ? LEARN_TERMINATED_THRESHOLD_DEFAULT : terminatedThreshold;
 		learningRate = Double.isNaN(learningRate) || learningRate <= 0 || learningRate > 1 ? LEARN_RATE_DEFAULT : learningRate;
 		
@@ -608,12 +608,12 @@ public abstract class RecurrentNetworkAbstract extends NetworkAbstract implement
 		int iteration = 0;
 		doStarted = true;
 		while (doStarted && (maxIteration <= 0 || iteration < maxIteration)) {
-			double lr = calcLearningRate(learningRate, iteration);
-			sample = resample(sample, iteration);
+			double lr = calcLearningRate(learningRate, iteration+1);
+			Iterable<List<Record>> subsample = resample(sample, iteration, maxIteration);
 
 			for (int i = 0; i < states.size(); i++) {
 				List<Record> samplei = Util.newList(0);
-				for (List<Record> records : sample) {
+				for (List<Record> records : subsample) {
 					if (records != null && i < records.size()) samplei.add(records.get(i));
 				}
 				if (samplei.size() == 0) continue;
@@ -629,7 +629,7 @@ public abstract class RecurrentNetworkAbstract extends NetworkAbstract implement
 
 			if (error == null || error.length == 0 || (iteration >= maxIteration && maxIteration == 1))
 				doStarted = false;
-			else if (terminatedThreshold > 0 && config.isBooleanValue(LEARN_TERMINATE_ERROR_FIELD)) {
+			else if (terminatedThreshold > 0 && config.getAsBoolean(LEARN_TERMINATE_ERROR_FIELD)) {
 				double errorMean = NeuronValue.normMean(error);
 				if (errorMean < terminatedThreshold) doStarted = false;
 			}

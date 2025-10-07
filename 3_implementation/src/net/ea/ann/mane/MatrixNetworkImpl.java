@@ -10,6 +10,7 @@ package net.ea.ann.mane;
 import java.awt.Dimension;
 import java.rmi.RemoteException;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 import net.ea.ann.conv.filter.DeconvConvFilter;
@@ -17,6 +18,7 @@ import net.ea.ann.conv.filter.Filter2D;
 import net.ea.ann.core.Id;
 import net.ea.ann.core.NetworkDoEvent.Type;
 import net.ea.ann.core.NetworkDoEventImpl;
+import net.ea.ann.core.Record;
 import net.ea.ann.core.Util;
 import net.ea.ann.core.function.Function;
 import net.ea.ann.core.value.Matrix;
@@ -40,13 +42,19 @@ public class MatrixNetworkImpl extends MatrixNetworkAbstract implements MatrixLa
 	/**
 	 * Default filter stride.
 	 */
-	public final static int BASE_DEFAULT = 2;
+	public final static int BASE_DEFAULT = ZOOMOUT_DEFAULT;
 	
 	
 	/**
 	 * Default depth.
 	 */
 	public final static int DEPTH_DEFAULT = 6;
+
+	
+	/**
+	 * Default value of minimum width field.
+	 */
+	public final static int MINSIZE = 32 / BASE_DEFAULT;
 
 	
 	/**
@@ -264,6 +272,7 @@ public class MatrixNetworkImpl extends MatrixNetworkAbstract implements MatrixLa
 //				layer.removeFilter();
 		}
 		
+		new MatrixNetworkAssoc(this).initParams();
 		return true;
 	}
 	
@@ -432,7 +441,7 @@ public class MatrixNetworkImpl extends MatrixNetworkAbstract implements MatrixLa
 	 * @param params other parameters.
 	 * @return array as output.
 	 */
-	Matrix evaluate(Matrix input, Object...params) {
+	protected Matrix evaluate(Matrix input, Object...params) {
 		MatrixLayerAbstract inputLayer = getInputLayer();
 		if (input != null) Matrix.copy(input, inputLayer.getInput());
 		if (inputLayer.getOutput() != inputLayer.getInput()) inputLayer.setOutput(inputLayer.getInput());
@@ -444,10 +453,23 @@ public class MatrixNetworkImpl extends MatrixNetworkAbstract implements MatrixLa
 	
 	@Override
 	public Matrix[] learn(Iterable<Matrix[]> inouts) throws RemoteException {
-		int maxIteration = config.getAsInt(LEARN_MAX_ITERATION_FIELD);
+		int maxIteration = paramGetMaxIteration();
 		double terminatedThreshold = config.getAsReal(LEARN_TERMINATED_THRESHOLD_FIELD);
-		double learningRate = config.getAsReal(LEARN_RATE_FIELD);
-		return learn(inouts, learningRate, terminatedThreshold, maxIteration);
+		double learningRate = paramGetLearningRate();
+		
+		int epochs = config.getAsInt(EPOCHS_PSEUDO_FILED);
+		epochs = epochs > 0 ? epochs : EPOCHS_PSEUDO_DEFAULT;
+		Matrix[] outputErrors = null;
+		Iterable<Matrix[]> sample = inouts;
+		for (int epoch = 0; epoch < epochs; epoch++) {
+			double lr = calcLearningRate(learningRate, epoch+1);
+			if (epoch > 0) {
+				if (!(sample instanceof List<?>)) sample = Record.listOf(sample);
+				Collections.shuffle((List<?>)sample);
+			}
+			outputErrors = learn(sample, lr, terminatedThreshold, maxIteration);
+		}
+		return outputErrors;
 	}
 
 
@@ -464,7 +486,7 @@ public class MatrixNetworkImpl extends MatrixNetworkAbstract implements MatrixLa
 			if (isDoStarted()) return null;
 		} catch (Throwable e) {Util.trace(e);}
 		
-		maxIteration = maxIteration >= 0 ? maxIteration :  LEARN_MAX_ITERATION_DEFAULT;
+		maxIteration = maxIteration >= 0 ? maxIteration :  LEARN_MAX_ITERATION_MAX;
 		terminatedThreshold = Double.isNaN(terminatedThreshold) || terminatedThreshold < 0 ? LEARN_TERMINATED_THRESHOLD_DEFAULT : terminatedThreshold;
 		learningRate = Double.isNaN(learningRate) || learningRate <= 0 || learningRate > 1 ? LEARN_RATE_DEFAULT : learningRate;
 		
@@ -472,12 +494,12 @@ public class MatrixNetworkImpl extends MatrixNetworkAbstract implements MatrixLa
 		int iteration = 0;
 		doStarted = true;
 		while (doStarted && (maxIteration <= 0 || iteration < maxIteration)) {
-			inouts = resample(inouts, iteration); //Re-sampling.
-			double lr = calcLearningRate(learningRate, iteration);
+			Iterable<Matrix[]> subinouts = resample(inouts, iteration, maxIteration); //Re-sampling.
+			double lr = calcLearningRate(learningRate, iteration+1);
 
 			if (trainers.size() == 0) {
 				List<Matrix> outputErrorList = Util.newList(0);
-				for (Matrix[] inout : inouts) {
+				for (Matrix[] inout : subinouts) {
 					Matrix input = inout[0], realOutput = inout[1];
 					Matrix output = evaluate(input, new Object[] {});
 					Matrix error = calcOutputError(output, realOutput, getOutputLayer());
@@ -488,7 +510,7 @@ public class MatrixNetworkImpl extends MatrixNetworkAbstract implements MatrixLa
 			}
 			else {
 				for (TaskTrainer trainer : trainers) {
-					outputErrors = trainer.train(this, inouts, false, learningRate);
+					outputErrors = trainer.train(this, subinouts, false, learningRate);
 				}
 			}
 			
@@ -499,7 +521,7 @@ public class MatrixNetworkImpl extends MatrixNetworkAbstract implements MatrixLa
 
 			if (outputErrors == null || outputErrors.length == 0 || (iteration >= maxIteration && maxIteration == 1))
 				doStarted = false;
-			else if (terminatedThreshold > 0 && config.isBooleanValue(LEARN_TERMINATE_ERROR_FIELD)) {
+			else if (terminatedThreshold > 0 && config.getAsBoolean(LEARN_TERMINATE_ERROR_FIELD)) {
 				double errorMean = Matrix.normMean(outputErrors);
 				if (errorMean < terminatedThreshold) doStarted = false;
 			}
@@ -536,8 +558,20 @@ public class MatrixNetworkImpl extends MatrixNetworkAbstract implements MatrixLa
 		
 		outputErrors = Arrays.copyOf(outputErrors, outputErrors.length);
 		for (int i = layers.length-1; i >= 0; i--) {
-			outputErrors = layers[i].backward(outputErrors, layers[i], true, learningRate);
+			if ( (!learning) || (!(layers[i] instanceof MatrixLayerImpl)) ) {
+				outputErrors = layers[i].backward(outputErrors, layers[i], learning, learningRate);
+				continue;
+			}
+			MatrixLayerImpl layer = (MatrixLayerImpl)layers[i];
+			layer.resetBackwardInfo();
+			outputErrors = layer.backward(outputErrors, learningRate);
 		}
+		for (int i = layers.length-1; i >= 0; i--) {
+			if ( (!learning) || (!(layers[i] instanceof MatrixLayerImpl)) ) continue;
+			MatrixLayerImpl layer = (MatrixLayerImpl)layers[i];
+			layer.updateParametersFromBackwardInfo(outputErrors.length, learningRate);
+		}
+		
 		if (outputErrors == null || this.prevLayer == null || this == focus) return outputErrors;
 		
 		Matrix[] backwardErrors = new Matrix[outputErrors.length];

@@ -110,7 +110,7 @@ public class ConvVAEImpl extends VAEImpl implements ConvVAE, FeatureToX, Feature
 	 */
 	public ConvVAEImpl(int neuronChannel, int rasterChannel, Size size, Id idRef) {
 		super(neuronChannel, null, idRef);
-		this.rasterChannel = rasterChannel = ConvGenModelAbstract.fixRasterChannel(this.neuronChannel, rasterChannel);
+		this.rasterChannel = rasterChannel = RasterAssoc.fixRasterChannel(this.neuronChannel, rasterChannel);
 		
 		this.width = size.width;
 		this.height = size.height;
@@ -463,11 +463,11 @@ public class ConvVAEImpl extends VAEImpl implements ConvVAE, FeatureToX, Feature
 	
 	
 	@Override
-	public NeuronValue[] learnRasterOne(Iterable<Raster> sample) throws RemoteException {
+	public NeuronValue[] learnRasterOneByOne(Iterable<Raster> sample) throws RemoteException {
 		int maxIteration = config.getAsInt(LEARN_MAX_ITERATION_FIELD);
 		double terminatedThreshold = config.getAsReal(LEARN_TERMINATED_THRESHOLD_FIELD);
-		double learningRate = config.getAsReal(LEARN_RATE_FIELD);
-		return learnRasterOne(sample, learningRate, terminatedThreshold, maxIteration);
+		double learningRate = paramGetLearningRate();
+		return learnRasterOneByOne(sample, learningRate, terminatedThreshold, maxIteration);
 	}
 
 
@@ -475,13 +475,13 @@ public class ConvVAEImpl extends VAEImpl implements ConvVAE, FeatureToX, Feature
 	public NeuronValue[] learnRaster(Iterable<Raster> sample) throws RemoteException {
 		int maxIteration = config.getAsInt(LEARN_MAX_ITERATION_FIELD);
 		double terminatedThreshold = config.getAsReal(LEARN_TERMINATED_THRESHOLD_FIELD);
-		double learningRate = config.getAsReal(LEARN_RATE_FIELD);
+		double learningRate = paramGetLearningRate();
 		return learnRaster(sample, learningRate, terminatedThreshold, maxIteration);
 	}
 
 
 	@Override
-	protected NeuronValue[] learnOne(Iterable<Record> sample, double learningRate, double terminatedThreshold, int maxIteration) {
+	protected NeuronValue[] learnOneByOne(Iterable<Record> sample, double learningRate, double terminatedThreshold, int maxIteration) {
 		try {
 			if (isDoStarted()) return null;
 		} catch (Throwable e) {Util.trace(e);}
@@ -489,7 +489,7 @@ public class ConvVAEImpl extends VAEImpl implements ConvVAE, FeatureToX, Feature
 		if (encoder == null || encoder.getBackbone().size() < 2) return null;
 		if (decoder == null || decoder.getBackbone().size() < 2) return null;
 		
-		maxIteration = maxIteration >= 0 ? maxIteration :  LEARN_MAX_ITERATION_DEFAULT;
+		maxIteration = maxIteration >= 0 ? maxIteration :  LEARN_MAX_ITERATION_MAX;
 		terminatedThreshold = Double.isNaN(terminatedThreshold) || terminatedThreshold < 0 ? LEARN_TERMINATED_THRESHOLD_DEFAULT : terminatedThreshold;
 		learningRate = Double.isNaN(learningRate) || learningRate <= 0 || learningRate > 1 ? LEARN_RATE_DEFAULT : learningRate;
 		
@@ -497,10 +497,10 @@ public class ConvVAEImpl extends VAEImpl implements ConvVAE, FeatureToX, Feature
 		int iteration = 0;
 		doStarted = true;
 		while (doStarted && (maxIteration <= 0 || iteration < maxIteration)) {
-			sample = resample(sample, iteration); //Re-sampling.
-			double lr = calcLearningRate(learningRate, iteration);
+			Iterable<Record> subsample = resample(sample, iteration, maxIteration); //Re-sampling.
+			double lr = calcLearningRate(learningRate, iteration+1);
 
-			for (Record record : sample) {
+			for (Record record : subsample) {
 				if (record == null) continue;
 				
 				NeuronValue[] input = null;
@@ -508,7 +508,7 @@ public class ConvVAEImpl extends VAEImpl implements ConvVAE, FeatureToX, Feature
 					if (conv != null) {
 						try {
 							//Learning convolutional network.
-							if (ConvGenModelAbstract.hasLearning(conv)) conv.learnOne(Arrays.asList(record), lr, terminatedThreshold, 1);
+							if (ConvGenModelAbstract.hasLearning(conv)) conv.learnOneByOne(Arrays.asList(record), lr, terminatedThreshold, 1);
 							conv.evaluate(record);
 							input = conv.getFeatureFitChannel().getData();
 						} catch (Throwable e) {Util.trace(e);}
@@ -544,7 +544,7 @@ public class ConvVAEImpl extends VAEImpl implements ConvVAE, FeatureToX, Feature
 
 			if (error == null || error.length == 0 || (iteration >= maxIteration && maxIteration == 1))
 				doStarted = false;
-			else if (terminatedThreshold > 0 && config.isBooleanValue(LEARN_TERMINATE_ERROR_FIELD)) {
+			else if (terminatedThreshold > 0 && config.getAsBoolean(LEARN_TERMINATE_ERROR_FIELD)) {
 				double errorMean = NeuronValue.normMean(error);
 				if (errorMean < terminatedThreshold) doStarted = false;
 			}
@@ -586,7 +586,7 @@ public class ConvVAEImpl extends VAEImpl implements ConvVAE, FeatureToX, Feature
 		if (encoder == null || encoder.getBackbone().size() < 2) return null;
 		if (decoder == null || decoder.getBackbone().size() < 2) return null;
 		
-		maxIteration = maxIteration >= 0 ? maxIteration :  LEARN_MAX_ITERATION_DEFAULT;
+		maxIteration = maxIteration >= 0 ? maxIteration :  LEARN_MAX_ITERATION_MAX;
 		terminatedThreshold = Double.isNaN(terminatedThreshold) || terminatedThreshold < 0 ? LEARN_TERMINATED_THRESHOLD_DEFAULT : terminatedThreshold;
 		learningRate = Double.isNaN(learningRate) || learningRate <= 0 || learningRate > 1 ? LEARN_RATE_DEFAULT : learningRate;
 		
@@ -594,17 +594,17 @@ public class ConvVAEImpl extends VAEImpl implements ConvVAE, FeatureToX, Feature
 		int iteration = 0;
 		doStarted = true;
 		while (doStarted && (maxIteration <= 0 || iteration < maxIteration)) {
-			sample = resample(sample, iteration); //Re-sampling.
-			double lr = calcLearningRate(learningRate, iteration);
+			Iterable<Record> subsample = resample(sample, iteration, maxIteration); //Re-sampling.
+			double lr = calcLearningRate(learningRate, iteration+1);
 
 			//Learning convolutional network.
 			try {
 				if (conv != null && ConvGenModelAbstract.hasLearning(conv))
-					conv.learn(sample, lr, terminatedThreshold, 1);
+					conv.learn(subsample, lr, terminatedThreshold, 1);
 			} catch (Throwable e) {Util.trace(e);}
 
 			List<Record> encodeSample = Util.newList(0);
-			for (Record record : sample) {
+			for (Record record : subsample) {
 				if (record == null) continue;
 				
 				NeuronValue[] input = null;
@@ -647,7 +647,7 @@ public class ConvVAEImpl extends VAEImpl implements ConvVAE, FeatureToX, Feature
 
 			if (error == null || error.length == 0 || iteration >= maxIteration)
 				doStarted = false;
-			else if (terminatedThreshold > 0 && config.isBooleanValue(LEARN_TERMINATE_ERROR_FIELD)) {
+			else if (terminatedThreshold > 0 && config.getAsBoolean(LEARN_TERMINATE_ERROR_FIELD)) {
 				double errorMean = NeuronValue.normMean(error);
 				if (errorMean < terminatedThreshold) doStarted = false;
 			}
@@ -688,8 +688,8 @@ public class ConvVAEImpl extends VAEImpl implements ConvVAE, FeatureToX, Feature
 	 * @param maxIteration maximum iteration.
 	 * @return learned error.
 	 */
-	private NeuronValue[] learnRasterOne(Iterable<Raster> sample, double learningRate, double terminatedThreshold, int maxIteration) {
-		return learnOne(RasterAssoc.toInputSample(sample), learningRate, terminatedThreshold, maxIteration);
+	private NeuronValue[] learnRasterOneByOne(Iterable<Raster> sample, double learningRate, double terminatedThreshold, int maxIteration) {
+		return learnOneByOne(RasterAssoc.toInputSample(sample), learningRate, terminatedThreshold, maxIteration);
 	}
 
 	

@@ -25,12 +25,20 @@ public interface Classifier extends Remote, Cloneable {
 
 	
 	/**
+	 * Getting neuron channel.
+	 * @return neuron channel.
+	 * @throws RemoteException if any error raises.
+	 */
+	int getNeuronChannel() throws RemoteException;
+
+	
+	/**
 	 * Learning classifier one-by-one record over sample.
 	 * @param sample sample for learning.
 	 * @return learned error.
 	 * @throws RemoteException if any error raises.
 	 */
-	NeuronValue[] learnRasterOne(Iterable<Raster> sample) throws RemoteException;
+	NeuronValue[] learnRasterOneByOne(Iterable<Raster> sample) throws RemoteException;
 
 
 	/**
