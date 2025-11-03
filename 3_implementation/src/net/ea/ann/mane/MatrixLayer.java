@@ -50,17 +50,18 @@ public interface MatrixLayer extends Layer {
 	
 	/**
 	 * Evaluating layer.
+	 * @param params additional parameters.
 	 * @return evaluated matrix as output.
 	 */
-	Matrix evaluate();
+	Matrix evaluate(Object...params);
 
 	
 	/**
 	 * Evaluating and forwarding layer.
-	 * @param input specified input.
+	 * @param inputs specified inputs.
 	 * @return evaluated matrix as output.
 	 */
-	Matrix forward(Matrix input);
+	Matrix forward(Record...inputs);
 	
 	
 	/**
@@ -69,9 +70,20 @@ public interface MatrixLayer extends Layer {
 	 * @param focus focused layer to stop forwarding.
 	 * @param learning learning flag.
 	 * @param learningRate learning rate.
-	 * @return training error.
+	 * @return backward error.
 	 */
-	Matrix[] backward(Matrix[] outputErrors, MatrixLayer focus, boolean learning, double learningRate);
+	Error[] backward(Error[] outputErrors, MatrixLayer focus, boolean learning, double learningRate);
 
+	
+	/**
+	 * Backward learning.
+	 * @param outputErrors output errors.
+	 * @param learningRate learning rate.
+	 * @return learning errors.
+	 */
+	default Error[] backward(Error[] outputErrors, double learningRate) {
+		return backward(outputErrors, null, true, learningRate);
+	}
+	
 	
 }

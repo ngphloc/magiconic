@@ -41,7 +41,7 @@ public class MatrixClassifier extends ClassifierModelAbstract {
 		if (name != null && !name.isEmpty())
 			return name;
 		else
-			return "mane_classifier";
+			return "classifier.mac";
 	}
 
 	

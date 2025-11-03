@@ -11,7 +11,6 @@ import java.io.Serializable;
 import java.util.List;
 
 import net.ea.ann.core.Util;
-import net.ea.ann.core.function.Function;
 import net.ea.ann.core.value.Matrix;
 
 /**
@@ -39,30 +38,28 @@ public abstract class TaskTrainerAbstract implements TaskTrainer, OutputConverte
 
 	
 	@Override
-	public Matrix[] train(MatrixLayer layer, Iterable<Matrix[]> inouts, boolean propagate, double learningRate) {
-		List<Matrix> biases = Util.newList(0);
-		for (Matrix[] inout : inouts) {
-			Matrix input = inout[0], realOutput = inout[1];
-			if (input != null) Matrix.copy(input, layer.getInput());
-			Matrix output = layer.evaluate();
-			Matrix bias = gradient(output, realOutput);
-			if (bias == null) continue;
+	public Error[] train(MatrixLayer layer, Iterable<Record> sample, boolean propagate, double learningRate) {
+		List<Error> biases = Util.newList(0);
+		for (Record record : sample) {
+			if (record == null) continue;
+			Matrix realOutput = record.output();
+			if (layer instanceof MatrixLayerExt) {
+				((MatrixLayerExt)layer).enterInputs(record);
+			}
+			else {
+				Matrix input = record.input();
+				if (input != null) Matrix.copy(input, layer.getInput());
+			}
 			
-			if (!(layer instanceof MatrixNetworkAbstract)) {
+			Error bias = new Error((Matrix)null);
+			Matrix output = layer.evaluate(bias);
+			Matrix err = gradient(output, realOutput);
+			if (err != null) {
+				bias.errorSet(err);
 				biases.add(bias);
-				continue;
 			}
-			
-			MatrixNetworkAbstract mane = (MatrixNetworkAbstract)layer;
-			Matrix oinput = mane.getOutputLayer().getInput();
-			Function activateRef = mane.getOutputLayer().getActivateRef();
-			if (oinput != null && activateRef != null) {
-				Matrix derivative = oinput.derivativeWise(activateRef);
-				bias = derivative.multiplyWise(bias);
-			}
-			biases.add(bias);
 		}
-		Matrix[] biasArray = biases.toArray(new Matrix[] {});
+		Error[] biasArray = biases.toArray(new Error[] {});
 		
 		return layer.backward(biasArray, propagate?layer:null, true, learningRate);
 	}

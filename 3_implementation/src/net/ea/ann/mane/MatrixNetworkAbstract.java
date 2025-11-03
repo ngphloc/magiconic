@@ -17,6 +17,8 @@ import net.ea.ann.core.NetworkAbstract;
 import net.ea.ann.core.Util;
 import net.ea.ann.core.function.Function;
 import net.ea.ann.core.value.Matrix;
+import net.ea.ann.core.value.NeuronValue;
+import net.ea.ann.core.value.NeuronValueCreator;
 import net.ea.ann.raster.Image;
 import net.ea.ann.raster.Raster;
 import net.ea.ann.raster.Size;
@@ -28,7 +30,7 @@ import net.ea.ann.raster.Size;
  * @version 1.0
  *
  */
-public abstract class MatrixNetworkAbstract extends NetworkAbstract implements MatrixNetwork {
+public abstract class MatrixNetworkAbstract extends NetworkAbstract implements MatrixNetwork, MatrixLayerExt, NeuronValueCreator {
 
 
 	/**
@@ -108,8 +110,8 @@ public abstract class MatrixNetworkAbstract extends NetworkAbstract implements M
 		this.config.put(MatrixLayerAbstract.LEARN_FILTER_FIELD, MatrixLayerAbstract.LEARN_FILTER_DEFAULT);
 
 		this.neuronChannel = neuronChannel = (neuronChannel < 1 ? 1 : neuronChannel);
-		this.activateRef = activateRef == null ? (activateRef = Raster.toActivationRef(this.neuronChannel, isNorm())) : activateRef;
-		this.convActivateRef = convActivateRef == null ? (convActivateRef = Raster.toConvActivationRef(this.neuronChannel, isNorm())) : convActivateRef;
+		this.activateRef = activateRef == null ? (activateRef = Raster.toActivationRef(this.neuronChannel, paramIsNorm())) : activateRef;
+		this.convActivateRef = convActivateRef == null ? (convActivateRef = Raster.toConvActivationRef(this.neuronChannel, paramIsNorm())) : convActivateRef;
 	}
 	
 
@@ -150,18 +152,24 @@ public abstract class MatrixNetworkAbstract extends NetworkAbstract implements M
 	protected abstract MatrixLayerAbstract newLayer();
 	
 	
+	@Override
+	public NeuronValue newNeuronValue() {
+		return newLayer().newNeuronValue();
+	}
+
+
 	/**
 	 * Default filter.
-	 * @param filterStride1
+	 * @param filterStride filter stride.
 	 * @return default filter.
 	 */
-	protected Filter2D defaultFilter(Dimension filterStride1) {
-		if (filterStride1 == null)
+	public Filter2D defaultFilter(Dimension filterStride) {
+		if (filterStride == null)
 			return null;
-		else if (filterStride1.width <= 0 || filterStride1.height <= 0)
+		else if (filterStride.width <= 0 || filterStride.height <= 0)
 			return null;
 		else
-			return ProductFilter2D.create(new Size(filterStride1), newLayer(), 1.0/(double)(filterStride1.height*filterStride1.width));
+			return ProductFilter2D.create(new Size(filterStride), newLayer(), 1.0/(double)(filterStride.height*filterStride.width));
 	}
 	
 	
@@ -188,20 +196,30 @@ public abstract class MatrixNetworkAbstract extends NetworkAbstract implements M
 	 */
 	public MatrixLayerAbstract get(int index) {return layers[index];}
 	
+	
 	/**
 	 * Getting input layer.
 	 * @return input layer.
 	 */
 	public MatrixLayerAbstract getInputLayer() {return layers[0];}
 	
-	
-	/**
-	 * Getting output layer.
-	 * @return output layer.
-	 */
+
+	@Override
 	public MatrixLayerAbstract getOutputLayer() {return layers[layers.length-1];}
 
 	
+//	@Override
+//	public Function getOutputActivateRef() {return layers[layers.length-1].activateRef;}
+
+
+	@Override
+	public void enterInputs(Record record) {
+		MatrixLayerAbstract inputLayer = getInputLayer();
+		Matrix input = record.input();
+		if (input != null) Matrix.copy(input, inputLayer.getInput());
+	}
+
+
 	/**
 	 * Resetting matrix neural network.
 	 */
@@ -228,26 +246,25 @@ public abstract class MatrixNetworkAbstract extends NetworkAbstract implements M
 
 	/**
 	 * Learning matrix neural network.
-	 * @param inouts sample as collection of input and output whose each element is an 2-component array of input (the first) and output (the second).
+	 * @param inouts sample.
 	 * @return learned error.
 	 */
-	public Matrix[] learnByRaster(Iterable<Raster[]> inouts) {
+	public Error[] learnByRaster(Iterable<Raster[]> inouts) {
 		try {
 			MatrixLayerAbstract inputLayer = getInputLayer();
 			Matrix input = inputLayer.getInput();
 			MatrixLayerAbstract outputLayer = getOutputLayer();
 			Matrix output = outputLayer.queryOutput();
-			List<Matrix[]> sample = Util.newList(0);
+			List<Record> sample = Util.newList(0);
 			for (Raster[] inout : inouts) {
 				Matrix matrixInput = inputLayer.toMatrix(inout[0], input.rows(), input.columns());
 				Matrix matrixOutput = outputLayer.toMatrix(inout[1], output.rows(), output.columns());
 				if (matrixInput != null && matrixOutput != null)
-					sample.add(new Matrix[] {matrixInput, matrixOutput});
+					sample.add(new Record(matrixInput, matrixOutput));
 			}
 			return sample.size() > 0 ? learn(sample) : null;
 		} catch (Throwable e) {Util.trace(e);}
 		return null;
-		
 	}
 	
 	
@@ -292,10 +309,24 @@ public abstract class MatrixNetworkAbstract extends NetworkAbstract implements M
 	
 	
 	/**
-	 * Checking whether something normalized in rang [0, 1].
-	 * @return whether something normalized in rang [0, 1].
+	 * Getting activation function.
+	 * @return activation function.
 	 */
-	protected boolean isNorm() {
+	public Function getActivateRef() {return activateRef;}
+	
+	
+	/**
+	 * Getting convolutional activation function.
+	 * @return convolutional activation function.
+	 */
+	public Function getConvActivateRef() {return convActivateRef;}
+	
+	
+	/**
+	 * Checking normalization mode.
+	 * @return normalization mode in rang [0, 1].
+	 */
+	public boolean paramIsNorm() {
 		if (config.containsKey(Raster.NORM_FIELD))
 			return config.getAsBoolean(Raster.NORM_FIELD);
 		else
@@ -304,10 +335,24 @@ public abstract class MatrixNetworkAbstract extends NetworkAbstract implements M
 
 
 	/**
+	 * Setting normalization mode.
+	 * @param isNorm normalization mode in rang [0, 1]..
+	 * @return this network.
+	 */
+	public MatrixNetworkAbstract paramSetNorm(boolean isNorm) {
+		if (paramIsNorm() == isNorm) return this;
+		this.config.put(Raster.NORM_FIELD, isNorm);
+		this.activateRef = Raster.toActivationRef(this.neuronChannel, isNorm);
+		this.convActivateRef = Raster.toConvActivationRef(this.neuronChannel, isNorm);
+		return this;
+	}
+
+	
+	/**
 	 * Getting default alpha.
 	 * @return default alpha.
 	 */
-	int getDefaultAlpha() {
+	int paramGetDefaultAlpha() {
 		if (config.containsKey(Image.ALPHA_FIELD))
 			return config.getAsInt(Image.ALPHA_FIELD);
 		else
@@ -319,7 +364,7 @@ public abstract class MatrixNetworkAbstract extends NetworkAbstract implements M
 	 * Checking whether the network is large scale.
 	 * @return whether the network is large scale.
 	 */
-	boolean isLargeScale() {
+	boolean paramIsLargeScale() {
 		if (config.containsKey(LARGE_SCALE_FIELD))
 			return config.getAsBoolean(LARGE_SCALE_FIELD);
 		else
@@ -328,23 +373,23 @@ public abstract class MatrixNetworkAbstract extends NetworkAbstract implements M
 	
 
 	/**
-	 * Checking whether the network data is vectorized.
-	 * @return whether the network data is vectorized.
+	 * Checking vectorization mode.
+	 * @return vectorization mode.
 	 */
-	public boolean isVectorized() {
+	public boolean paramIsVectorized() {
 		if (config.containsKey(VECTORIZED_FIELD))
 			return config.getAsBoolean(VECTORIZED_FIELD);
 		else
 			return VECTORIZED_DEFAULT;
 	}
 
-	
+
 	/**
 	 * Setting vectorization mode.
 	 * @param vectorized vectorization mode.
 	 * @return this network.
 	 */
-	public MatrixNetworkAbstract setVectorized(boolean vectorized) {
+	public MatrixNetworkAbstract paramSetVectorized(boolean vectorized) {
 		config.put(VECTORIZED_FIELD, vectorized);
 		return this;
 	}
@@ -354,7 +399,7 @@ public abstract class MatrixNetworkAbstract extends NetworkAbstract implements M
 	 * Checking whether filter is learned.
 	 * @return whether filter is learned.
 	 */
-	public boolean isLearnFilter() {
+	public boolean paramIsLearnFilter() {
 		if (config.containsKey(MatrixLayerAbstract.LEARN_FILTER_FIELD))
 			return config.getAsBoolean(MatrixLayerAbstract.LEARN_FILTER_FIELD);
 		else
@@ -366,7 +411,7 @@ public abstract class MatrixNetworkAbstract extends NetworkAbstract implements M
 	 * Setting whether filter is learned.
 	 * @param learnFilter whether filter is learned.
 	 */
-	public MatrixNetworkAbstract setLearnFilter(boolean learnFilter) {
+	public MatrixNetworkAbstract paramSetLearnFilter(boolean learnFilter) {
 		config.put(MatrixLayerAbstract.LEARN_FILTER_FIELD, learnFilter);
 		return this;
 	}

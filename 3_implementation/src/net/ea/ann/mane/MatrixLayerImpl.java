@@ -38,12 +38,6 @@ public class MatrixLayerImpl extends MatrixLayerAbstract {
 	private static final long serialVersionUID = 1L;
 	
 	
-//	/**
-//	 * Very small number for initialization.
-//	 */
-//	protected final static double EPSILON = 0 ;//Network.LEARN_TERMINATED_THRESHOLD_DEFAULT;
-	
-	
 	/**
 	 * The first weight matrix.
 	 */
@@ -254,8 +248,6 @@ public class MatrixLayerImpl extends MatrixLayerAbstract {
 		}
 		
 		//Initialize ones related to weights.
-//		if (this.weight1 != null) Matrix.fill(this.weight1, EPSILON);
-//		if (this.weight2 != null) Matrix.fill(this.weight2, EPSILON);
 		if (this.weight1 != null || this.weight2 != null) this.bias = newMatrix(size.height, size.width);
 		if (this.bias != null) {
 			this.input = newMatrix(size.height, size.width);
@@ -265,7 +257,6 @@ public class MatrixLayerImpl extends MatrixLayerAbstract {
 			this.output = this.input = newMatrix(size.height, size.width); //Only for input layer where both filter and weights are null and so, its input and output must be initialized.
 		}
 		
-//		new MatrixLayerAssoc(this).initParams();
 		return true;
 	}
 	
@@ -477,8 +468,6 @@ public class MatrixLayerImpl extends MatrixLayerAbstract {
 		}
 		if (this.weight1 == null && this.weight2 == null) return false;
 		
-//		if (this.weight1 != null) Matrix.fill(this.weight1, EPSILON);
-//		if (this.weight2 != null) Matrix.fill(this.weight2, EPSILON);
 		this.bias = newMatrix(size.height, size.width);
 		this.input = newMatrix(size.height, size.width);
 		this.output = newMatrix(size.height, size.width);
@@ -487,7 +476,6 @@ public class MatrixLayerImpl extends MatrixLayerAbstract {
 		this.filterBias = null;
 		this.prevInput = null;
 		
-//		new MatrixLayerAssoc(this).initParams();
 		return true;
 	}
 	
@@ -509,7 +497,7 @@ public class MatrixLayerImpl extends MatrixLayerAbstract {
 	
 	
 	@Override
-	public Matrix evaluate() {
+	public Matrix evaluate(Object...params) {
 		if (this.prevLayer == null) return null;
 		Matrix prevInput = this.filter != null ? evaluateByFilter() : null;
 		if (weight1 == null && weight2 == null) return prevInput;
@@ -525,7 +513,8 @@ public class MatrixLayerImpl extends MatrixLayerAbstract {
 
 
 	@Override
-	public Matrix forward(Matrix input) {
+	public Matrix forward(Record...inputs) {
+		Matrix input = inputs != null && inputs.length > 0 ? inputs[0].input() : null;
 		if (this.prevLayer == null) {
 			if (input != null) Matrix.copy(input, this.input);
 			if (this.input != this.output) this.output = this.input;
@@ -547,13 +536,13 @@ public class MatrixLayerImpl extends MatrixLayerAbstract {
 	 * @param learningRate learning rate.
 	 * @return training error.
 	 */
-	protected Matrix[] learn(Matrix[] outputErrors, double learningRate) {
+	protected Error[] learn(Error[] outputErrors, double learningRate) {
 		 return backward(outputErrors, this, true, learningRate);
 	}
 
 	
 	@Override
-	public Matrix[] backward(Matrix[] outputErrors, MatrixLayer focus, boolean learning, double learningRate) {
+	public Error[] backward(Error[] outputErrors, MatrixLayer focus, boolean learning, double learningRate) {
 		if (outputErrors == null || outputErrors.length == 0) return null;
 		learningRate = Double.isNaN(learningRate) || learningRate <= 0 || learningRate > 1 ? Network.LEARN_RATE_DEFAULT : learningRate;
 		if (focus == null) learning = true;
@@ -570,7 +559,7 @@ public class MatrixLayerImpl extends MatrixLayerAbstract {
 		for (int j = 0; j < outputErrors.length; j++) {
 			if (nextLayer == null) {
 				//Getting errors from environment.
-				errors[j] = outputErrors[j];
+				errors[j] = outputErrors[j].error();
 				
 				//Training adapter here.
 			}
@@ -587,7 +576,7 @@ public class MatrixLayerImpl extends MatrixLayerAbstract {
 					nextW2 = (nextW2 != null) ? nextW2 : output.createIdentity(output.columns());
 					
 					Matrix[] errorArray = new Matrix[nextW2.rows()];
-					Matrix vecNextError = outputErrors[j].vec(); //Please pay attention to this code line.
+					Matrix vecNextError = outputErrors[j].error().vec(); //Please pay attention to this code line.
 					for (int row = 0; row < errorArray.length; row++) {
 						//errorArray[row] = Matrix.kroneckerProductMutilply(nextW2, nextW1T, row, vecNextError);
 						errorArray[row] = nextW2.kroneckerProductRowOf(nextW1T, row).multiply(vecNextError); //Faster.
@@ -596,7 +585,7 @@ public class MatrixLayerImpl extends MatrixLayerAbstract {
 					errors[j] = derivative != null ? derivative.multiplyWise(errors[j]) : errors[j];
 				}
 				else {
-					errors[j] = outputErrors[j]; //Please pay attention to this code line.
+					errors[j] = outputErrors[j].error(); //Please pay attention to this code line.
 				}
 				
 			} //Calculating errors[j]
@@ -607,11 +596,11 @@ public class MatrixLayerImpl extends MatrixLayerAbstract {
 				ConvLayerSingle2D errorj = this.matrixToConvLayer(errors[j]);
 				NeuronValueRaster dValues = prevLayer2D.dValue(errorj, this.getFilter());
 				//Please pay attention to this code line to assign current errors to output errors.
-				outputErrors[j] = prevLayer.arrayToMatrix(dValues.getValues(), prevLayer2D.getHeight(), prevLayer2D.getWidth());
+				outputErrors[j].errorSet(prevLayer.arrayToMatrix(dValues.getValues(), prevLayer2D.getHeight(), prevLayer2D.getWidth()));
 				
 				if (this.isLearnFilter()) {
-					dFilterErrors[j] = dValues.getCountValues() > 0 ? Matrix.valueSum(outputErrors[j]).divide(dValues.getCountValues()) :
-						outputErrors[j].get(0, 0).zero(); //Filter errors.
+					dFilterErrors[j] = dValues.getCountValues() > 0 ? Matrix.valueSum(outputErrors[j].error()).divide(dValues.getCountValues()) :
+						outputErrors[j].error().get(0, 0).zero(); //Filter errors.
 					dFilterKernels[j] = prevLayer2D.dKernel(errorj, this.getFilter()); //Filter kernel errors.
 				}
 			}
@@ -705,12 +694,12 @@ public class MatrixLayerImpl extends MatrixLayerAbstract {
 		}
 		
 		//Please pay attention to this code line to assign current errors to output errors.
-		if (this.getFilter() == null) outputErrors = errors;
+		if (this.getFilter() == null) {
+			for (int i = 0; i < outputErrors.length; i++) outputErrors[i].errorSet(errors[i]);
+		}
 
-		//Returning output errors if there is no previous layers.
-		if (outputErrors == null || prevLayer == null) return outputErrors;
-		//Stop at focused layer.
-		if (this == focus) return outputErrors;
+		//Returning output errors if there is no previous layers or this layer is focused layer.
+		if (prevLayer == null || this == focus) return outputErrors;
 		
 		//Browsing backward layers.
 		errors = null;
@@ -728,11 +717,11 @@ public class MatrixLayerImpl extends MatrixLayerAbstract {
 	 * @param learningRate learning rate.
 	 * @return training error.
 	 */
-	Matrix[] backward(Matrix[] outputErrors, double learningRate) {
+	Error[] backwardThisLayerWithoutLearning(Error[] outputErrors, double learningRate) {
 		if (outputErrors == null || outputErrors.length == 0) return null;
-		Matrix[] errors = new Matrix[outputErrors.length];
+		Error[] errors = new Error[outputErrors.length];
 		for (int i = 0; i < outputErrors.length; i++) {
-			errors[i] = backward(new Matrix[] {outputErrors[i]}, this, false, learningRate)[0];
+			errors[i] = backward(new Error[] {outputErrors[i]}, this, false, learningRate)[0];
 		}
 		return errors;
 	}

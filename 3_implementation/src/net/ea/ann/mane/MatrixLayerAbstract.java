@@ -256,7 +256,26 @@ public abstract class MatrixLayerAbstract extends LayerAbstract implements Matri
 		return this.activateRef = activateRef;
 	}
 
+	
+	/**
+	 * Getting reference to convolutional activation function.
+	 * @return reference to convolutional activation function.
+	 */
+	public Function getConvActivateRef() {
+		return convActivateRef;
+	}
+	
+	
+	/**
+	 * Setting reference to convolutional activation function.
+	 * @param activateRef reference to convolutional activation function.
+	 * @return previous function reference.
+	 */
+	protected Function setConvActivateRef(Function convActivateRef) {
+		return this.convActivateRef = convActivateRef;
+	}
 
+	
 	/**
 	 * Getting previous input value, which is for filtering by default.
 	 * @return previous input value.
@@ -282,11 +301,27 @@ public abstract class MatrixLayerAbstract extends LayerAbstract implements Matri
 	 * Querying output by most, which can be previous input.
 	 * @return output by most, which can be previous input.
 	 */
-	protected Matrix queryInput() {
+	public Matrix queryInput() {
 		Matrix input = getInput();
 		return input != null ? input : getPrevInput();
 	}
 
+	
+	/**
+	 * Querying actual output by most, which can be previous input.
+	 * @return actual output by most, which can be previous input.
+	 */
+	public Matrix queryActualInput() {
+		if (containsWeights())
+			return queryInput();
+		else if (getFilter() != null) {
+			Matrix prevInput = getPrevInput();
+			return prevInput != null ? prevInput : queryInput();
+		}
+		else
+			return queryInput();
+	}
+	
 	
 	/**
 	 * Setting input value.
@@ -429,7 +464,7 @@ public abstract class MatrixLayerAbstract extends LayerAbstract implements Matri
 	 * Getting vectorization rows.
 	 * @return Number of rows in case of vectorization. By default it is zero, which means that there is no vectorization by default.
 	 */
-	int getVecRows() {
+	public int getVecRows() {
 		return vecRows;
 	}
 	
@@ -438,7 +473,7 @@ public abstract class MatrixLayerAbstract extends LayerAbstract implements Matri
 	 * Checking whether to apply vectorization.
 	 * @return whether to apply vectorization.
 	 */
-	boolean isVectorized() {
+	public boolean isVectorized() {
 		return vecRows > 0;
 	}
 	
@@ -460,7 +495,7 @@ public abstract class MatrixLayerAbstract extends LayerAbstract implements Matri
 	 */
 	Raster toRaster(Matrix matrix) {
 		matrix = isVectorized() ? matrix.vecInverse(vecRows) : matrix;
-		return Matrix.toRaster(matrix, neuronChannel, isNorm(), getDefaultAlpha());
+		return Matrix.toRaster(matrix, neuronChannel, paramIsNorm(), paramGetDefaultAlpha());
 	}
 
 	
@@ -502,7 +537,7 @@ public abstract class MatrixLayerAbstract extends LayerAbstract implements Matri
 	 */
 	private Matrix toMatrix0(Raster raster, int rows, int columns) {
 		Matrix ref = queryOutput().create(1, 1);
-		return Matrix.toMatrix(rows, columns, raster, neuronChannel, isNorm(), ref);
+		return Matrix.toMatrix(rows, columns, raster, neuronChannel, paramIsNorm(), ref);
 	}
 
 	
@@ -588,8 +623,8 @@ public abstract class MatrixLayerAbstract extends LayerAbstract implements Matri
 	 * Checking whether something normalized in rang [0, 1].
 	 * @return whether something normalized in rang [0, 1].
 	 */
-	boolean isNorm() {
-		return network != null ? network.isNorm() : Raster.NORM_DEFAULT;
+	boolean paramIsNorm() {
+		return network != null ? network.paramIsNorm() : Raster.NORM_DEFAULT;
 	}
 
 
@@ -597,8 +632,8 @@ public abstract class MatrixLayerAbstract extends LayerAbstract implements Matri
 	 * Getting default alpha.
 	 * @return default alpha.
 	 */
-	int getDefaultAlpha() {
-		return network != null ? network.getDefaultAlpha() : Image.ALPHA_DEFAULT;
+	int paramGetDefaultAlpha() {
+		return network != null ? network.paramGetDefaultAlpha() : Image.ALPHA_DEFAULT;
 	}
 
 

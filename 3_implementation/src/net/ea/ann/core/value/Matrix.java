@@ -8,6 +8,7 @@
 package net.ea.ann.core.value;
 
 import java.util.List;
+import java.util.Random;
 
 import net.ea.ann.core.Util;
 import net.ea.ann.core.function.Function;
@@ -251,9 +252,9 @@ public interface Matrix extends NeuronValueCreator {
 	
 	
 	/**
-	 * Calculating softmax function of matrix by row.
+	 * Calculating soft-max function of matrix by row.
 	 * @param matrix matrix.
-	 * @return softmax function of matrix by row.
+	 * @return soft-max function of matrix by row.
 	 */
 	static Matrix softmaxByRow(Matrix matrix) {
 		if (matrix == null) return null;
@@ -279,9 +280,9 @@ public interface Matrix extends NeuronValueCreator {
 
 	
 	/**
-	 * Calculating softmax function of matrix by column.
+	 * Calculating soft-max function of matrix by column.
 	 * @param matrix matrix.
-	 * @return softmax function of matrix by column.
+	 * @return soft-max function of matrix by column.
 	 */
 	static Matrix softmaxByColumn(Matrix matrix) {
 		if (matrix == null) return null;
@@ -362,6 +363,42 @@ public interface Matrix extends NeuronValueCreator {
 	 */
 	Matrix vecInverse(int rows);
 	
+
+	/**
+	 * Checking whether two matrices are equal.
+	 * @param matrix1 matrix 1.
+	 * @param matrix2 matrix 2.
+	 * @return true if two matrices are equal.
+	 */
+	static boolean equals(Matrix matrix1, Matrix matrix2) {
+		if (matrix1.rows() != matrix2.rows() || matrix1.columns() != matrix2.columns()) return false;
+		int rows = matrix1.rows(), columns = matrix1.columns();
+		for (int row = 0; row < rows; row++) {
+			for (int column = 0; column < columns; column++) {
+				if (!matrix1.get(row, column).equals(matrix2.get(row, column))) return false;
+			}
+		}
+		return true;
+	}
+	
+	
+	/**
+	 * Checking whether two matrices are equal in elements reference.
+	 * @param matrix1 matrix 1.
+	 * @param matrix2 matrix 2.
+	 * @return true if two matrices are equal in elemental reference.
+	 */
+	static boolean refEquals(Matrix matrix1, Matrix matrix2) {
+		if (matrix1.rows() != matrix2.rows() || matrix1.columns() != matrix2.columns()) return false;
+		int rows = matrix1.rows(), columns = matrix1.columns();
+		for (int row = 0; row < rows; row++) {
+			for (int column = 0; column < columns; column++) {
+				if (matrix1.get(row, column) != matrix2.get(row, column)) return false;
+			}
+		}
+		return true;
+	}
+
 	
 	/**
 	 * Calculating value mean of matrices.
@@ -408,6 +445,25 @@ public interface Matrix extends NeuronValueCreator {
 			}
 		}
 		return mean.divide((double)N);
+	}
+
+	
+	/**
+	 * Calculating norm sum of matrices.
+	 * @param matrices specified matrices.
+	 * @return norm sum.
+	 */
+	static double normSum(Matrix...matrices) {
+		if (matrices == null || matrices.length == 0) return 0;
+		double sum = 0;
+		for (Matrix matrix : matrices) {
+			for (int i = 0; i < matrix.rows(); i++) {
+				for (int j = 0; j < matrix.columns(); j++) {
+					sum += matrix.get(i, j).norm();
+				}
+			}
+		}
+		return sum;
 	}
 
 	
@@ -486,6 +542,19 @@ public interface Matrix extends NeuronValueCreator {
 			}
 		}
 		return max;
+	}
+
+	
+	/**
+	 * Calculating sum matrix.
+	 * @param matrices array of matrices.
+	 * @return sum matrix.
+	 */
+	static Matrix sum(Matrix...matrices) {
+		if (matrices == null || matrices.length == 0) return null;
+		Matrix sum = matrices[0];
+		for (int i = 1; i < matrices.length; i++) sum = sum.add(matrices[i]);
+		return sum;
 	}
 
 	
@@ -623,10 +692,25 @@ public interface Matrix extends NeuronValueCreator {
 	 * @return filled matrix.
 	 */
 	static void fill(Matrix matrix, double v) {
-		NeuronValue value = matrix.get(0, 0).unit().multiply(v);
+		NeuronValue value = matrix.get(0, 0).valueOf(v);
 		fill(matrix, value);
 	}
 	
+	
+	/**
+	 * Filling matrix by random value.
+	 * @param matrix matrix.
+	 * @param rnd randomizer.
+	 */
+	static void fill(Matrix matrix, Random rnd) {
+		for (int row = 0; row < matrix.rows(); row++) {
+			for (int column = 0; column < matrix.columns(); column++) {
+				NeuronValue value = matrix.get(row, column).valueOf(NeuronValue.r(rnd));
+				matrix.set(row, column, value);
+			}
+		}
+	}
+
 	
 	/**
 	 * Extracting raster into matrix.
@@ -651,6 +735,20 @@ public interface Matrix extends NeuronValueCreator {
 		return matrix;
 	}
 
+	
+	/**
+	 * Extracting raster into matrix.
+	 * @param rows rows.
+	 * @param columns columns.
+	 * @param raster raster.
+	 * @param neuronChannel neuron channel.
+	 * @param isNorm flag to indicate whether pixel is normalized in range [0, 1].
+	 * @return matrix.
+	 */
+	static Matrix toMatrix(int rows, int columns, Raster raster, int neuronChannel, boolean isNorm) {
+		return toMatrix(rows, columns, raster, neuronChannel, isNorm, null);
+	}
+	
 	
 	/**
 	 * Extracting values of matrix as vector.
