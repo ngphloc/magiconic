@@ -1,3 +1,10 @@
+/**
+ * AI: Artificial Intelligent Project
+ * (C) Copyright by Loc Nguyen's Academic Network
+ * Project homepage: ai.locnguyen.net
+ * Email: ng_phloc@yahoo.com
+ * Phone: +84-975250362
+ */
 package net.ea.ann.classifier;
 
 import java.awt.Dimension;
@@ -20,7 +27,6 @@ import net.ea.ann.core.value.NeuronValue;
 import net.ea.ann.core.value.NeuronValueCreator;
 import net.ea.ann.mane.Error;
 import net.ea.ann.mane.MatrixNetworkAbstract;
-import net.ea.ann.mane.MatrixNetworkImpl;
 import net.ea.ann.mane.Record;
 import net.ea.ann.mane.TaskTrainerLossEntropy;
 import net.ea.ann.raster.Raster;
@@ -92,7 +98,7 @@ public abstract class ClassifierAbstract extends NetworkAbstract implements Clas
 	/**
 	 * Default value for filter stride.
 	 */
-	public static final int FILTER_STRIDE_DEFAULT = MatrixNetworkImpl.BASE_DEFAULT;
+	public static final int FILTER_STRIDE_DEFAULT = 1; //MatrixNetworkImpl.BASE_DEFAULT;
 
 	
 	/**
@@ -104,7 +110,7 @@ public abstract class ClassifierAbstract extends NetworkAbstract implements Clas
 	/**
 	 * Default value for depth.
 	 */
-	public static final int DEPTH_DEFAULT = MatrixNetworkImpl.DEPTH_DEFAULT;
+	public static final int DEPTH_DEFAULT = 2; //MatrixNetworkImpl.DEPTH_DEFAULT;
 
 	
 	/**
@@ -141,6 +147,18 @@ public abstract class ClassifierAbstract extends NetworkAbstract implements Clas
 	 * Default value for adjusting.
 	 */
 	public static final boolean ADJUST_DEFAULT = false;
+
+	
+	/**
+	 * Field for sample weight.
+	 */
+	public static final String SAMPLE_WEIGHT_FIELD = "classifier_sample_weight";
+	
+	
+	/**
+	 * Default value for sample weight.
+	 */
+	public static final boolean SAMPLE_WEIGHT_DEFAULT = false;
 
 	
 	/**
@@ -194,6 +212,7 @@ public abstract class ClassifierAbstract extends NetworkAbstract implements Clas
 		config.put(DUAL_FIELD, DUAL_DEFAULT);
 		config.put(BASELINE_FIELD, BASELINE_DEFAULT);
 		config.put(ADJUST_FIELD, ADJUST_DEFAULT);
+		config.put(SAMPLE_WEIGHT_FIELD, SAMPLE_WEIGHT_DEFAULT);
 	}
 
 	
@@ -240,11 +259,14 @@ public abstract class ClassifierAbstract extends NetworkAbstract implements Clas
 	 * @param filter1 filter 1, which can be null.
 	 * @param depth1 the number 1 of hidden layers plus output layer, which can be 0.
 	 * @param dual1 dual mode 1.
-	 * @param nCoreClasses2 the number of rows and columns of core classes.
+	 * @param outputSize2 output size 2.
 	 * @param depth2 the number 2 of hidden layers plus output layer, which can be 0.
 	 * @return true if initialization is successful.
 	 */
-	protected boolean initialize(Dimension inputSize1, Dimension outputSize1, Filter2D filter1, int depth1, boolean dual1, Dimension nCoreClasses2, int depth2) {
+	protected boolean initialize(Dimension inputSize1, Dimension outputSize1, Filter2D filter1, int depth1, boolean dual1, Dimension outputSize2, int depth2) {
+		this.baseline = null;
+		Dimension nCoreClasses2 = outputSize2;
+		if (nCoreClasses2 == null) nCoreClasses2 = outputSize1 != null ? outputSize1 : inputSize1; 
 		return configClassInfo(nCoreClasses2);
 	}
 
@@ -256,7 +278,7 @@ public abstract class ClassifierAbstract extends NetworkAbstract implements Clas
 	 * @param filterStride1 filter stride 1.
 	 * @param depth1 the number 1 of hidden layers plus output layer.
 	 * @param dual1 dual mode 1.
-	 * @param outputSize2 output size 1.
+	 * @param outputSize2 output size 2.
 	 * @param depth2 the number 2 of hidden layers plus output layer.
 	 * @return true if initialization is successful.
 	 */
@@ -305,10 +327,24 @@ public abstract class ClassifierAbstract extends NetworkAbstract implements Clas
 		Dimension inputSize = new Dimension(averageSize.width, averageSize.height);
 		Dimension filterStride = new Dimension(paramGetFilterStride(), paramGetFilterStride());
 		int depth = paramGetDepth();
-		boolean dual = paramIsDual();
+		depth = depth > 0 ? depth : 0;
 		Dimension nCoreClasses = paramIsByColumn() ? new Dimension(groupCount, minClassCount) : new Dimension(minClassCount, groupCount);
-		if (!initialize(inputSize, null, filterStride, depth, dual, nCoreClasses, depth))
-			return false;
+		if (paramIsConv()) {
+			int halfDepth = depth > 1 ? depth/2 : depth;
+			if (paramIsDual()) {
+				if (!initialize(inputSize, nCoreClasses, filterStride, halfDepth, true, null, 0))
+					return false;
+			}
+			else {
+				int depth1 = halfDepth, depth2 = depth - halfDepth;
+				if (!initialize(inputSize, inputSize, filterStride, depth1, true, nCoreClasses, depth2))
+					return false;
+			}
+		}
+		else {
+			if (!initialize(inputSize, nCoreClasses, (Filter2D)null, depth, false, null, 0))
+				return false;
+		}
 
 		//Main task: setting up class maps.
 		this.classMaps.clear();
@@ -657,18 +693,18 @@ public abstract class ClassifierAbstract extends NetworkAbstract implements Clas
 	 */
 	double[] weightsOfOutput(Matrix output, int groupIndex) {
 		NeuronValue[] values = getOutput(output, groupIndex);
-		if (this.baseline == null) return weightsOfOutput(values);
+		if (this.baseline == null) return weightsOfOutput(values/*Matrix.softmax(values)*/);
 		
-		NeuronValue zero = values[0].zero();
+//		NeuronValue zero = values[0].zero();
 		for (int classIndex = 0; classIndex < values.length; classIndex++) {
 			NeuronValue base = paramIsByColumn() ? this.baseline.get(classIndex, groupIndex) : this.baseline.get(groupIndex, classIndex);
 			//Following code lines are important due to apply baseline into determining class.
 			NeuronValue sim = values[classIndex].subtract(base);
-			sim = sim.max(zero);
+//			sim = sim.max(zero);
 			values[classIndex] = sim;
 		}
 		
-		return weightsOfOutput(values);
+		return weightsOfOutput(values/*Matrix.softmax(values)*/);
 	}
 
 	
@@ -811,23 +847,112 @@ public abstract class ClassifierAbstract extends NetworkAbstract implements Clas
 		this.baseline = null;
 		if (!paramIsBaseline()) return;
 		
-		List<Matrix> outputList = Util.newList(0);
-		for (Record record : sample) {
-			Matrix output = evaluate(record.input());
-			if (output != null) outputList.add(output);
-		}
-		if (outputList.size() == 0) return;
-		this.baseline = calcBaseline(outputList.toArray(new Matrix[] {}));
+		this.baseline = calcBaseline(sample);
 	}
 
 
 	/**
 	 * Calculating baseline.
+	 * @param sample sample.
+	 * @return baseline.
+	 */
+	Matrix calcBaseline(Iterable<Record> sample) {
+		return paramGetCombNumber() == 1 ? calcBaselineByBaseline(sample) : calcBaselineByBaseline(sample);
+	}
+	
+	
+	/**
+	 * Calculating baseline.
+	 * @param sample sample.
+	 * @return baseline.
+	 */
+	private Matrix calcBaselineByBaseline(Iterable<Record> sample) {
+		Matrix baseline = getOutput().create(getOutput().rows(), getOutput().columns());
+		Matrix.fill(baseline, 0);
+		Matrix count = baseline.create(baseline.rows(), baseline.columns());
+		Matrix.fill(count, 0);
+		
+		int combNumber = paramGetCombNumber();
+		int groups = getNumberOfGroups();
+		for (Record record : sample) {
+			Matrix output = evaluate(record.input());
+			Matrix realOutput = record.output();
+			for (int group = 0; group < groups; group++) {
+				NeuronValue[] outputOne = getOutput(output, group);
+				NeuronValue[] realOutputOne = getOutput(realOutput, group);
+				double[] realOutputOneV = weightsOfOutput(realOutputOne);
+				int maxIndex = 0;
+				for (int i = 1; i < realOutputOneV.length; i++) {
+					if (realOutputOneV[i] > realOutputOneV[maxIndex]) maxIndex = i;
+				}
+				
+				boolean[] indicator = new boolean[realOutputOneV.length];
+				Arrays.fill(indicator, false);
+				indicator[maxIndex] = true;
+				for (int i = 0; i < indicator.length; i++) {
+					if (indicator[i] || combNumber == 1) continue;
+					if (realOutputOneV[i] >= realOutputOneV[maxIndex] - Double.MIN_VALUE) indicator[i] = true;
+				}
+				
+				for (int index = 0; index < indicator.length; index++) {
+					if (!indicator[index]) continue;
+					if (paramIsByColumn()) {
+						NeuronValue value = baseline.get(index, group);
+						value = value.add(outputOne[index]);
+						baseline.set(index, group, value);
+						
+						NeuronValue c = count.get(index, group);
+						c = c.add(c.unit());
+						count.set(index, group, c);
+					}
+					else {
+						NeuronValue value = baseline.get(group, index);
+						value = value.add(outputOne[index]);
+						baseline.set(group, index, value);
+						
+						NeuronValue c = count.get(group, index);
+						c = c.add(c.unit());
+						count.set(group, index, c);
+					}
+				}
+			}
+		} //End sample.
+
+		//Mean of base line.
+		for (int row = 0; row < baseline.rows(); row++) {
+			for (int column = 0; column < baseline.columns(); column++) {
+				NeuronValue value = baseline.get(row, column);
+				NeuronValue c = count.get(row, column);
+				if (c.canInvert())
+					value = value.divide(c);
+				else if (paramIsNorm())
+					value = value.unit();
+				else
+					value = value.valueOf(Float.MAX_VALUE); //Improving this code line later for non-normalized case.
+				baseline.set(row, column, value);
+			}
+		}
+		
+		return baseline;
+	}
+	
+	
+	/**
+	 * Calculating baseline.
 	 * @param matrices array of matrices.
 	 * @return baseline.
 	 */
-	static Matrix calcBaseline(Matrix...matrices) {
-		if (matrices == null || matrices.length == 0) return null;
+	@SuppressWarnings("unused")
+	@Deprecated
+	private Matrix calcBaselineByStat(Iterable<Record> sample) {
+		List<Matrix> outputList = Util.newList(0);
+		for (Record record : sample) {
+			Matrix output = evaluate(record.input());
+			if (output != null) outputList.add(output);
+		}
+		if (outputList.size() == 0) return null;
+
+		Matrix[] matrices = outputList.toArray(new Matrix[] {});
 		Matrix mean = Matrix.mean(matrices);
 		Matrix std = Matrix.std(matrices);
 		Matrix baseLineByMean = mean.subtract(std.multiply0(1.96));
@@ -1095,6 +1220,30 @@ public abstract class ClassifierAbstract extends NetworkAbstract implements Clas
 		config.put(ADJUST_FIELD, adjust);
 		return this;
 	}
+
+
+	/**
+	 * Checking sample weight mode.
+	 * @return sample weight mode.
+	 */
+	public boolean paramIsSampleWeight() {
+		if (config.containsKey(SAMPLE_WEIGHT_FIELD))
+			return config.getAsBoolean(SAMPLE_WEIGHT_FIELD);
+		else
+			return SAMPLE_WEIGHT_DEFAULT;
+	}
+	
+	
+	/**
+	 * Setting sample weight mode.
+	 * @param sampleWeight sample weight mode.
+	 * @return this classifier.
+	 */
+	public ClassifierAbstract paramSetSampleWeight(boolean sampleWeight) {
+		config.put(SAMPLE_WEIGHT_FIELD, sampleWeight );
+		return this;
+	}
+
 
 }
 

@@ -252,6 +252,27 @@ public interface Matrix extends NeuronValueCreator {
 	
 	
 	/**
+	 * Calculating soft-max function of vector.
+	 * @param values vector.
+	 * @return soft-max function of vector.
+	 */
+	static NeuronValue[] softmax(NeuronValue...values) {
+		if (values == null || values.length == 0) return null;
+		NeuronValue[] softmax = new NeuronValue[values.length];
+		NeuronValue sum = values[0].zero();
+		NeuronValue max = NeuronValue.max(values);
+		for (int i = 0; i < values.length; i++) {
+			softmax[i] = values[i].subtract(max).exp();
+			sum = sum.add(softmax[i]);
+		}
+		for (int i = 0; i < values.length; i++) {
+			softmax[i] = softmax[i].divide(sum);
+		}
+		return softmax;
+	}
+	
+	
+	/**
 	 * Calculating soft-max function of matrix by row.
 	 * @param matrix matrix.
 	 * @return soft-max function of matrix by row.
@@ -280,6 +301,19 @@ public interface Matrix extends NeuronValueCreator {
 
 	
 	/**
+	 * Calculating inverse soft-max function of matrix by row.
+	 * @param matrix matrix.
+	 * @return inverse soft-max function of matrix by row.
+	 */
+	static Matrix softmaxByRowInverse(Matrix matrix) {
+		Matrix unitMatrix = matrix.create(matrix.rows(), matrix.columns());
+		NeuronValue unit = matrix.get(0, 0).unit();
+		Matrix.fill(unitMatrix, unit);
+		return softmaxByRow(unitMatrix.subtract(matrix));
+	}
+	
+	
+	/**
 	 * Calculating soft-max function of matrix by column.
 	 * @param matrix matrix.
 	 * @return soft-max function of matrix by column.
@@ -306,6 +340,19 @@ public interface Matrix extends NeuronValueCreator {
 		return softmax;
 	}
 	
+	
+	/**
+	 * Calculating inverse soft-max function of matrix by column.
+	 * @param matrix matrix.
+	 * @return inverse soft-max function of matrix by column.
+	 */
+	static Matrix softmaxByColumnInverse(Matrix matrix) {
+		Matrix unitMatrix = matrix.create(matrix.rows(), matrix.columns());
+		NeuronValue unit = matrix.get(0, 0).unit();
+		Matrix.fill(unitMatrix, unit);
+		return softmaxByColumn(unitMatrix.subtract(matrix));
+	}
+
 	
 	/**
 	 * Concatenating many matrices into one matrix by horizontal, excluding this matrix.
@@ -568,6 +615,28 @@ public interface Matrix extends NeuronValueCreator {
 		Matrix mean = matrices[0];
 		for (int i = 1; i < matrices.length; i++) mean = mean.add(matrices[i]);
 		return mean.divide0(matrices.length);
+	}
+	
+	
+	/**
+	 * Calculating mean absolute value of two matrices.
+	 * @param matrix1 matrix 1.
+	 * @param matrix2 matrix 2.
+	 * @return mean absolute value of two matrices.
+	 */
+	static NeuronValue mae(Matrix matrix1, Matrix matrix2) {
+		int rows = Math.min(matrix1.rows(), matrix2.rows());
+		int columns = Math.min(matrix1.columns(), matrix2.columns());
+		NeuronValue mae = null;
+		int n = 0;
+		for (int row = 0; row < rows; row++) {
+			for (int column = 0; column < columns; column++) {
+				NeuronValue d = matrix1.get(row, column).subtract(matrix2.get(row, column)).abs();
+				mae = mae != null ? mae.add(d) : d;
+				n++;
+			}
+		}
+		return mae.divide(n);
 	}
 	
 	

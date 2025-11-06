@@ -115,6 +115,7 @@ public class MatrixClassifier extends MatrixClassifierAbstract {
 		this.adjustBaseline = null;
 		this.adjuster = new MatrixNetworkImpl(this.neuronChannel, this.nut.getActivateRef(), this.nut.getConvActivateRef(), this.idRef);
 		this.adjuster.paramSetInclude(this);
+		this.adjuster.setTrainer(new TaskTrainerLossEntropy());
 		return new MatrixNetworkInitializer(adjuster).initialize(size, size, adjustDepth);
 	}
 
@@ -139,11 +140,35 @@ public class MatrixClassifier extends MatrixClassifierAbstract {
 	}
 
 	
-	@Override
-	public NeuronValue[] learnRaster(Iterable<Raster> sample) throws RemoteException {
+	/**
+	 * Learning raster.
+	 * @param sample sample.
+	 * @return errors.
+	 */
+	Error[] learnRaster0(Iterable<Raster> sample) {
 		List<Record> newsample = prelearn(sample);
 		Error[] errors = learn(newsample);
 		learnVerify(newsample);
+		return errors;
+	}
+
+	
+	@Override
+	public NeuronValue[] learnRaster(Iterable<Raster> sample) throws RemoteException {
+		Matrix sampleWeight = null;
+		if (paramIsSampleWeight()) {
+			this.sampleWeight = null;
+			List<Record> newsample = prelearn(sample);
+			learn(newsample);
+			learnVerify(newsample);
+			if (this.baseline != null) sampleWeight = paramIsByColumn() ? Matrix.softmaxByColumnInverse(this.baseline) : Matrix.softmaxByRowInverse(this.baseline);
+		}
+		List<Record> newsample = prelearn(sample);
+		this.sampleWeight = sampleWeight;
+		Error[] errors = learn(newsample);
+		learnVerify(newsample);
+		if (this.sampleWeight != null) this.baseline = null;
+		this.sampleWeight = null;
 		
 		if (this.adjuster != null) {
 			this.adjuster.paramSetInclude(this);
@@ -165,32 +190,34 @@ public class MatrixClassifier extends MatrixClassifierAbstract {
 
 	
 	@Override
-	public void learnVerify(Iterable<Record> inouts) {
+	public void learnVerify(Iterable<Record> sample) {
 		if (adjuster == null) {
-			super.learnVerify(inouts);
+			super.learnVerify(sample);
 			return;
 		}
 		this.baseline = null;
 		this.adjustBaseline = null;
 		if (!paramIsBaseline()) return;
+
+		this.baseline = calcBaseline(sample);
 		
-		List<Matrix> outputList = Util.newList(0);
-		for (Record inout : inouts) {
-			Matrix output = evaluate(inout.input());
-			if (output != null) outputList.add(output);
-		}
-		if (outputList.size() == 0) return;
-		this.baseline = calcBaseline(outputList.toArray(new Matrix[] {}));
-		
-		List<Matrix> adjustOutputList = Util.newList(0);
-		for (Matrix output : outputList) {
-			try {
-				Matrix adjustOutput = adjuster.evaluate(output);
-				if (adjustOutput != null) adjustOutputList.add(adjustOutput);
-			} catch (Throwable e) {Util.trace(e);}
-		}
-		if (adjustOutputList.size() == 0) return;
-		this.adjustBaseline = calcBaseline(adjustOutputList.toArray(new Matrix[] {}));
+//		List<Matrix> outputList = Util.newList(0);
+//		for (Record inout : inouts) {
+//			Matrix output = evaluate(inout.input());
+//			if (output != null) outputList.add(output);
+//		}
+//		if (outputList.size() == 0) return;
+//		this.baseline = calcBaseline(outputList.toArray(new Matrix[] {}));
+//		
+//		List<Matrix> adjustOutputList = Util.newList(0);
+//		for (Matrix output : outputList) {
+//			try {
+//				Matrix adjustOutput = adjuster.evaluate(output);
+//				if (adjustOutput != null) adjustOutputList.add(adjustOutput);
+//			} catch (Throwable e) {Util.trace(e);}
+//		}
+//		if (adjustOutputList.size() == 0) return;
+//		this.adjustBaseline = calcBaseline(adjustOutputList.toArray(new Matrix[] {}));
 	}
 
 	
@@ -234,6 +261,12 @@ abstract class MatrixClassifierAbstract extends ClassifierAbstract {
 	 */
 	protected MatrixNetworkImpl nut = null;
 
+
+	/**
+	 * Sample weight.
+	 */
+	protected Matrix sampleWeight = null;
+	
 	
 	/**
 	 * Constructor with neuron channel, activation function, convolutional activation function, and identifier reference.
@@ -245,13 +278,25 @@ abstract class MatrixClassifierAbstract extends ClassifierAbstract {
 	public MatrixClassifierAbstract(int neuronChannel, Function activateRef, Function convActivateRef, Id idRef) {
 		super(neuronChannel, idRef);
 		
-		this.nut = new MatrixNetworkImpl(this.neuronChannel, activateRef, convActivateRef, idRef);
+		this.nut = new MatrixNetworkImpl(this.neuronChannel, activateRef, convActivateRef, idRef) {
+
+			/**
+			 * Serial version UID for serializable class. 
+			 */
+			private static final long serialVersionUID = 1L;
+
+			@Override
+			protected Object[] defineOutputErrorParams() {
+				return sampleWeight != null ? new Object[] {sampleWeight} : null;
+			}
+			
+		};
 		try {
 			this.config.putAll(this.nut.getConfig());
+			this.nut.getConfig().putAll(this.config);
 		} catch (Throwable e) {Util.trace(e);}
 		this.nut.setTrainer(new TaskTrainerLossEntropy());
 	}
-
 	
 	/**
 	 * Constructor with neuron channel, activation function, and convolutional activation function.
@@ -290,18 +335,27 @@ abstract class MatrixClassifierAbstract extends ClassifierAbstract {
 
 
 	@Override
-	protected boolean initialize(Dimension inputSize1, Dimension outputSize1, Filter2D filter1, int depth1, boolean dual1, Dimension nCoreClasses2, int depth2) {
-		if (!super.initialize(inputSize1, outputSize1, filter1, depth1, dual1, nCoreClasses2, depth2)) return false;
+	public void reset() {
+		super.reset();
+		sampleWeight = null;
+	}
+
+	@Override
+	protected boolean initialize(Dimension inputSize1, Dimension outputSize1, Filter2D filter1, int depth1, boolean dual1, Dimension outputSize2, int depth2) {
+		if (!super.initialize(inputSize1, outputSize1, filter1, depth1, dual1, outputSize2, depth2)) return false;
+		this.sampleWeight = null;
 		
 		int outputCount = this.outputClassMaps.get(0).size();
-		int groupCount = paramIsByColumn() ? nCoreClasses2.width : nCoreClasses2.height;
-		Dimension outputSize2 = paramIsByColumn() ? new Dimension(groupCount, outputCount) : new Dimension(outputCount, groupCount);
-		boolean initialized = false;
-		if (paramIsConv())
-			initialized = nut.initialize(inputSize1, outputSize1, filter1, depth1, dual1, outputSize2, depth2);
-		else
-			initialized = nut.initialize(inputSize1, outputSize2, (Filter2D)null, depth1, false, null, 0);
-		if (!initialized) return false;
+		int groupCount = getNumberOfGroups();
+		Dimension outputCombSize = paramIsByColumn() ? new Dimension(groupCount, outputCount) : new Dimension(outputCount, groupCount);
+		if (outputSize2 == null) {
+			if (!nut.initializeFixed(inputSize1, outputCombSize, filter1, depth1, dual1, outputSize2, depth2))
+				return false;
+		}
+		else {
+			if (!nut.initializeFixed(inputSize1, outputSize1, filter1, depth1, dual1, outputCombSize, depth2))
+				return false;
+		}
 		
 		Matrix output = getOutput();
 		if (paramIsByColumn()) {

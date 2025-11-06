@@ -13,10 +13,10 @@ import java.io.PrintStream;
 import java.io.Serializable;
 import java.util.Scanner;
 
+import net.ea.ann.classifier.ForestClassifier.TreeModel;
 import net.ea.ann.core.Network;
 import net.ea.ann.core.function.Function;
 import net.ea.ann.mane.MatrixNetworkAbstract;
-import net.ea.ann.transformer.TransformerBasic;
 
 /**
  * This class provides utility methods to create classifier model.
@@ -51,7 +51,11 @@ public final class ClassifierBuilder implements Cloneable, Serializable {
 		 */
 		tramac,
 
-		
+		/**
+		 * Forest classifier.
+		 */
+		forest,
+
 		/**
 		 * Stack network classifier.
 		 */
@@ -121,9 +125,21 @@ public final class ClassifierBuilder implements Cloneable, Serializable {
 
 	
 	/**
+	 * Baseline mode.
+	 */
+	protected int depth = ClassifierAbstract.DEPTH_DEFAULT;
+
+	
+	/**
 	 * Number of blocks.
 	 */
-	protected int blocks = TransformerBasic.BLOCKS_NUMBER_DEFAULT;
+	protected int blocks = TransformerClassifierAbstract.BLOCKS_NUMBER_DEFAULT;
+	
+	
+	/**
+	 * Tree model.
+	 */
+	protected TreeModel treeModel = TreeModel.mac;
 	
 	
 	/**
@@ -175,6 +191,88 @@ public final class ClassifierBuilder implements Cloneable, Serializable {
 	
 	
 	/**
+	 * Converting an integer into classifier model.
+	 * @param modelIndex model index.
+	 * @return classifier model.
+	 */
+	static ClassifierModel toModel(int modelIndex) {
+		ClassifierModel model = ClassifierModel.mac;
+		switch (modelIndex) {
+		case 0:
+			model = ClassifierModel.mac;
+			break;
+		case 1:
+			model = ClassifierModel.tramac;
+			break;
+		case 2:
+			model = ClassifierModel.forest;
+			break;
+		case 3:
+			model = ClassifierModel.stack;
+			break;
+		default:
+			model = ClassifierModel.mac;
+			break;
+		}
+		return model;
+	}
+	
+	
+	/**
+	 * Converting classifier model into integer.
+	 * @param model classifier model.
+	 * @return integer.
+	 */
+	static int toModelIndex(ClassifierModel model) {
+		int modelIndex = 0;
+		switch (model) {
+		case mac:
+			modelIndex = 0; 
+			break;
+		case tramac:
+			modelIndex = 1; 
+			break;
+		case forest:
+			modelIndex = 2; 
+			break;
+		case stack:
+			modelIndex = 3; 
+			break;
+		default:
+			break;
+		}
+		return modelIndex;
+	}
+	
+	
+	/**
+	 * Converting classifier model into text.
+	 * @param model classifier model.
+	 * @return text.
+	 */
+	static String toModelText(ClassifierModel model) {
+		String modelText = "mac";
+		switch (model) {
+		case mac:
+			modelText = "mac";
+			break;
+		case tramac:
+			modelText = "tramac";
+			break;
+		case forest:
+			modelText = "forest";
+			break;
+		case stack:
+			modelText = "stack";
+			break;
+		default:
+			break;
+		}
+		return modelText;
+	}
+	
+
+	/**
 	 * Getting classifier model.
 	 * @return classifier model.
 	 */
@@ -190,6 +288,17 @@ public final class ClassifierBuilder implements Cloneable, Serializable {
 	 */
 	public ClassifierBuilder setModel(ClassifierModel model) {
 		this.model = model;
+		return this;
+	}
+	
+	
+	/**
+	 * Setting classifier model.
+	 * @param modelIndex
+	 * @return this builder.
+	 */
+	public ClassifierBuilder setModel(int modelIndex) {
+		setModel(toModel(modelIndex));
 		return this;
 	}
 	
@@ -335,6 +444,26 @@ public final class ClassifierBuilder implements Cloneable, Serializable {
 	
 	
 	/**
+	 * Getting depth.
+	 * @return depth.
+	 */
+	public int getDepth() {
+		return depth;
+	}
+	
+	
+	/**
+	 * Setting depth.
+	 * @param depth depth.
+	 * @return this builder.
+	 */
+	public ClassifierBuilder setDepth(int depth) {
+		this.depth = depth;
+		return this;
+	}
+
+	
+	/**
 	 * Getting blocks.
 	 * @return blocks.
 	 */
@@ -355,6 +484,37 @@ public final class ClassifierBuilder implements Cloneable, Serializable {
 
 	
 	/**
+	 * Getting tree model.
+	 * @return tree model.
+	 */
+	public TreeModel getTreeModel() {
+		return treeModel;
+	}
+	
+	
+	/**
+	 * Setting tree model.
+	 * @param treeModel tree model.
+	 * @return this builder.
+	 */
+	public ClassifierBuilder setTreeModel(TreeModel treeModel) {
+		this.treeModel = treeModel;
+		return this;
+	}
+
+	
+	/**
+	 * Setting tree model.
+	 * @param treeModelIndex tree model index.
+	 * @return this builder.
+	 */
+	public ClassifierBuilder setTreeModel(int treeModelIndex) {
+		this.treeModel = ForestClassifier.toTreeModel(treeModelIndex);
+		return this;
+	}
+
+	
+	/**
 	 * Build classifier.
 	 * @return classifier.
 	 */
@@ -366,6 +526,9 @@ public final class ClassifierBuilder implements Cloneable, Serializable {
 			break;
 		case tramac:
 			classifier = TransformerClassifier.create(neuronChannel, true); 
+			break;
+		case forest:
+			classifier = ForestClassifier.create(neuronChannel, true); 
 			break;
 		case stack:
 			classifier = StackClassifier.create(neuronChannel, true);
@@ -380,9 +543,10 @@ public final class ClassifierBuilder implements Cloneable, Serializable {
 			mac.paramSetBatches(batches);
 			mac.paramSetConv(conv);
 			mac.paramSetVectorized(vectorized);
+			mac.paramSetBaseline(baseline);
 			mac.paramSetAdjust(adjust);
 			mac.paramSetDual(dual);
-			mac.paramSetBaseline(baseline);
+			mac.paramSetDepth(depth);
 		}
 		else if (classifier instanceof TransformerClassifier) {
 			TransformerClassifier tramac = (TransformerClassifier)classifier;
@@ -390,10 +554,24 @@ public final class ClassifierBuilder implements Cloneable, Serializable {
 			tramac.paramSetBatches(batches);
 			tramac.paramSetConv(conv);
 			tramac.paramSetVectorized(vectorized);
+			tramac.paramSetBaseline(baseline);
 			tramac.paramSetAdjust(adjust);
 			tramac.paramSetDual(dual);
-			tramac.paramSetBaseline(baseline);
+			tramac.paramSetDepth(depth);
 			tramac.paramSetBlocksNumber(blocks);
+		}
+		else if (classifier instanceof ForestClassifier) {
+			ForestClassifier forest = (ForestClassifier)classifier;
+			forest.paramSetLearningRate(learningRate);
+			forest.paramSetBatches(batches);
+			forest.paramSetConv(conv);
+			forest.paramSetVectorized(vectorized);
+			forest.paramSetBaseline(baseline);
+			forest.paramSetAdjust(adjust);
+			forest.paramSetDual(dual);
+			forest.paramSetDepth(depth);
+			forest.paramSetBlocksNumber(blocks);
+			forest.paramSetTreeModel(treeModel);
 		}
 		else if (classifier instanceof StackClassifier) {
 			
@@ -425,16 +603,16 @@ public final class ClassifierBuilder implements Cloneable, Serializable {
 		Scanner scanner = new Scanner(in);
 		PrintStream printer = new PrintStream(out);
 		
-		int defaultModel = 0;
-		int model = defaultModel;
-		printer.print("Model (0-mac, 1-tramac, 2-stack) (default " + defaultModel + " is mac):");
+		int defaultModelIndex = toModelIndex(ClassifierModel.mac);
+		int modelIndex = defaultModelIndex;
+		printer.print("Model (0-mac, 1-tramac, 2-forest, 3-stack) (default " + defaultModelIndex + " is " + toModel(defaultModelIndex) + "):");
 		try {
 			String line = scanner.nextLine().trim();
-			if (!line.isBlank() && !line.isEmpty()) model = Integer.parseInt(line);
+			if (!line.isBlank() && !line.isEmpty()) modelIndex = Integer.parseInt(line);
 		} catch (Throwable e) {}
-		if (Double.isNaN(model)) model = defaultModel;
-		if (model <= 0) model = defaultModel;
-		printer.println("Model is " + model + "\n");
+		if (Double.isNaN(modelIndex)) modelIndex = defaultModelIndex;
+		if (modelIndex < 0) modelIndex = defaultModelIndex;
+		printer.println("Model is " + toModel(modelIndex) + "\n");
 		
 		int defaultRasterChannel = 3;
 		int rasterChannel = defaultRasterChannel;
@@ -485,6 +663,14 @@ public final class ClassifierBuilder implements Cloneable, Serializable {
 		} catch (Throwable e) {}
 		printer.println("Vectorization is " + vectorized + "\n");
 	
+		boolean baseline = ClassifierAbstract.BASELINE_DEFAULT;
+		printer.print("Baseline (" + baseline + " is default):");
+		try {
+			String line = scanner.nextLine().trim();
+			if (!line.isBlank() && !line.isEmpty()) baseline = Boolean.parseBoolean(line);
+		} catch (Throwable e) {}
+		printer.println("Baseline is " + baseline + "\n");
+
 		boolean adjust = ClassifierAbstract.ADJUST_DEFAULT;
 		printer.print("Adjustment (" + adjust + " is default):");
 		try {
@@ -501,39 +687,55 @@ public final class ClassifierBuilder implements Cloneable, Serializable {
 		} catch (Throwable e) {}
 		printer.println("Dual mode is " + dual + "\n");
 		
-		int defaultBlocks = TransformerBasic.BLOCKS_NUMBER_DEFAULT;
-		int blocks = defaultBlocks;
-		printer.print("Blocks (default " + defaultBlocks + "):");
+		int defaultDepth = ClassifierAbstract.DEPTH_DEFAULT;
+		int depth = defaultDepth;
+		printer.print("Depth (default " + depth + "):");
 		try {
 			String line = scanner.nextLine().trim();
-			if (!line.isBlank() && !line.isEmpty()) blocks = Integer.parseInt(line);
+			if (!line.isBlank() && !line.isEmpty()) depth = Integer.parseInt(line);
 		} catch (Throwable e) {}
-		if (Double.isNaN(blocks)) blocks = defaultBlocks;
-		if (blocks <= 0) blocks = defaultBlocks;
-		printer.println("Blocks are " + blocks + "\n");
+		if (Double.isNaN(depth)) depth = defaultDepth;
+		if (depth <= 0) depth = defaultDepth;
+		printer.println("Depth is " + depth + "\n");
 
 		ClassifierBuilder builder = new ClassifierBuilder(rasterChannel);
-		switch (model) {
-		case 0:
-			builder.setModel(ClassifierModel.mac);
-			break;
-		case 1:
-			builder.setModel(ClassifierModel.tramac);
-			break;
-		case 2:
-			builder.setModel(ClassifierModel.stack);
-			break;
-		default:
-			builder.setModel(ClassifierModel.mac);
-			break;
-		}
+		builder.setModel(modelIndex);
 		builder.setLearningRate(lr);
 		builder.setBatches(batches);
 		builder.setConv(conv);
 		builder.setVectorized(vectorized);
+		builder.setBaseline(baseline);
 		builder.setAdjust(adjust);
 		builder.setDual(dual);
-		builder.setBlocks(blocks);
+		builder.setDepth(depth);
+
+		if (builder.getModel() == ClassifierModel.tramac) {
+			int defaultBlocks = TransformerClassifierAbstract.BLOCKS_NUMBER_DEFAULT;
+			int blocks = defaultBlocks;
+			printer.print("Blocks (default " + defaultBlocks + "):");
+			try {
+				String line = scanner.nextLine().trim();
+				if (!line.isBlank() && !line.isEmpty()) blocks = Integer.parseInt(line);
+			} catch (Throwable e) {}
+			if (Double.isNaN(blocks)) blocks = defaultBlocks;
+			if (blocks <= 0) blocks = defaultBlocks;
+			printer.println("Blocks are " + blocks + "\n");
+			builder.setBlocks(blocks);
+		}
+		
+		if (builder.getModel() == ClassifierModel.forest) {
+			int defaultTreeModelIndex = ForestClassifier.toTreeModelIndex(TreeModel.mac);
+			int treeModelIndex = defaultTreeModelIndex;
+			printer.print("Tree model (0-mac, 1-tramac) (default " + defaultTreeModelIndex + " is " + ForestClassifier.toTreeModel(defaultTreeModelIndex) + "):");
+			try {
+				String line = scanner.nextLine().trim();
+				if (!line.isBlank() && !line.isEmpty()) treeModelIndex = Integer.parseInt(line);
+			} catch (Throwable e) {}
+			if (Double.isNaN(treeModelIndex)) treeModelIndex = defaultTreeModelIndex;
+			if (treeModelIndex < 0) treeModelIndex = defaultTreeModelIndex;
+			printer.println("Tree model is " + ForestClassifier.toTreeModel(treeModelIndex) + "\n");
+			builder.setTreeModel(treeModelIndex);
+		}
 		return builder;
 	}
 	

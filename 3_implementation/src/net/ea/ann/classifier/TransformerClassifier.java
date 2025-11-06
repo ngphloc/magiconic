@@ -22,7 +22,6 @@ import net.ea.ann.mane.MatrixNetworkInitializer;
 import net.ea.ann.mane.Record;
 import net.ea.ann.mane.TaskTrainerLossEntropy;
 import net.ea.ann.raster.Raster;
-import net.ea.ann.transformer.TransformerBasic;
 import net.ea.ann.transformer.TransformerImpl;
 import net.ea.ann.transformer.TransformerInitializer;
 
@@ -96,6 +95,7 @@ public class TransformerClassifier extends TransformerClassifierAbstract {
 		this.adjustBaseline = null;
 		this.adjuster = new MatrixNetworkImpl(this.neuronChannel, nut.getActivateRef(), nut.getConvActivateRef(), this.idRef);
 		this.adjuster.paramSetInclude(this);
+		this.adjuster.setTrainer(new TaskTrainerLossEntropy());
 		return new MatrixNetworkInitializer(adjuster).initialize(size, size, adjustDepth);
 	}
 
@@ -146,32 +146,34 @@ public class TransformerClassifier extends TransformerClassifierAbstract {
 
 	
 	@Override
-	public void learnVerify(Iterable<Record> inouts) {
+	public void learnVerify(Iterable<Record> sample) {
 		if (adjuster == null) {
-			super.learnVerify(inouts);
+			super.learnVerify(sample);
 			return;
 		}
 		this.baseline = null;
 		this.adjustBaseline = null;
 		if (!paramIsBaseline()) return;
 		
-		List<Matrix> outputList = Util.newList(0);
-		for (Record inout : inouts) {
-			Matrix output = evaluate(inout.input());
-			if (output != null) outputList.add(output);
-		}
-		if (outputList.size() == 0) return;
-		this.baseline = calcBaseline(outputList.toArray(new Matrix[] {}));
-		
-		List<Matrix> adjustOutputList = Util.newList(0);
-		for (Matrix output : outputList) {
-			try {
-				Matrix adjustOutput = adjuster.evaluate(output);
-				if (adjustOutput != null) adjustOutputList.add(adjustOutput);
-			} catch (Throwable e) {Util.trace(e);}
-		}
-		if (adjustOutputList.size() == 0) return;
-		this.adjustBaseline = calcBaseline(adjustOutputList.toArray(new Matrix[] {}));
+		this.baseline = calcBaseline(sample);
+
+//		List<Matrix> outputList = Util.newList(0);
+//		for (Record inout : inouts) {
+//			Matrix output = evaluate(inout.input());
+//			if (output != null) outputList.add(output);
+//		}
+//		if (outputList.size() == 0) return;
+//		this.baseline = calcBaseline(outputList.toArray(new Matrix[] {}));
+//		
+//		List<Matrix> adjustOutputList = Util.newList(0);
+//		for (Matrix output : outputList) {
+//			try {
+//				Matrix adjustOutput = adjuster.evaluate(output);
+//				if (adjustOutput != null) adjustOutputList.add(adjustOutput);
+//			} catch (Throwable e) {Util.trace(e);}
+//		}
+//		if (adjustOutputList.size() == 0) return;
+//		this.adjustBaseline = calcBaseline(adjustOutputList.toArray(new Matrix[] {}));
 	}
 
 	
@@ -215,6 +217,12 @@ class TransformerClassifierAbstract extends ClassifierAbstract {
 	
 	
 	/**
+	 * Field for number of blocks.
+	 */
+	public static final int BLOCKS_NUMBER_DEFAULT = 1; //TransformerBasic.BLOCKS_NUMBER_DEFAULT;
+
+	
+	/**
 	 * Internal transformer.
 	 */
 	protected TransformerImpl transformer = null;
@@ -227,11 +235,12 @@ class TransformerClassifierAbstract extends ClassifierAbstract {
 	 */
 	public TransformerClassifierAbstract(int neuronChannel, Id idRef) {
 		super(neuronChannel, idRef);
-		this.config.put(BLOCKS_NUMBER_FIELD, TransformerBasic.BLOCKS_NUMBER_DEFAULT);
+		this.config.put(BLOCKS_NUMBER_FIELD, BLOCKS_NUMBER_DEFAULT);
 		
 		this.transformer = new TransformerImpl(this.neuronChannel, idRef);
 		try {
 			this.config.putAll(this.transformer.getConfig());
+			this.transformer.getConfig().putAll(this.config);
 		} catch (Throwable e) {Util.trace(e);}
 		this.transformer.setTrainer(new TaskTrainerLossEntropy());
 	}
@@ -247,25 +256,25 @@ class TransformerClassifierAbstract extends ClassifierAbstract {
 
 	
 	@Override
-	protected boolean initialize(Dimension inputSize1, Dimension outputSize1, Filter2D filter1, int depth1, boolean dual1, Dimension nCoreClasses2, int depth2) {
-		if (!super.initialize(inputSize1, outputSize1, filter1, depth1, dual1, nCoreClasses2, depth2)) return false;
+	protected boolean initialize(Dimension inputSize1, Dimension outputSize1, Filter2D filter1, int depth1, boolean dual1, Dimension outputSize2, int depth2) {
+		if (!super.initialize(inputSize1, outputSize1, filter1, depth1, dual1, outputSize2, depth2)) return false;
 		TransformerInitializer initializer = new TransformerInitializer(this.transformer);
 		if (!initializer.initializeOnlyEncoder(inputSize1.height, inputSize1.width, depth1, paramGetBlocksNumber())) return false;
 		
 		int outputCount = this.outputClassMaps.get(0).size();
-		int groupCount = paramIsByColumn() ? nCoreClasses2.width : nCoreClasses2.height;
-		Dimension outputSize2 = paramIsByColumn() ? new Dimension(groupCount, outputCount) : new Dimension(outputCount, groupCount);
-		boolean initialized = false;
-		if (outputSize1 != null || depth1 > 0) {
-			int depth = depth2 == 1 ? depth2 : depth2/2;
-			if (paramIsConv())
-				initialized = transformer.setOutputAdapter(outputSize1, filter1, depth, dual1, outputSize2, depth);
-			else
-				initialized = transformer.setOutputAdapter(outputSize1, (Filter2D)null, depth, false, outputSize2, depth);
+		int groupCount = getNumberOfGroups();
+		Dimension outputCombSize = paramIsByColumn() ? new Dimension(groupCount, outputCount) : new Dimension(outputCount, groupCount);
+		if (outputSize2 == null) {
+			int depth = depth1 + depth2;
+			depth = depth > 1 ? depth-1 : depth;
+			if (!transformer.setOutputAdapter(outputCombSize, filter1, depth, dual1, null, 0))
+				return false;
 		}
-		else
-			initialized = transformer.setOutputAdapter(outputSize2, depth2);
-		if (!initialized) return false;
+		else {
+			depth1 = depth1 > 1 ? depth1-1 : depth1;
+			if (!transformer.setOutputAdapter(outputSize1, filter1, depth1, dual1, outputCombSize, depth2))
+				return false;
+		}
 		
 		Matrix output = getOutput();
 		if (paramIsByColumn()) {
@@ -329,7 +338,7 @@ class TransformerClassifierAbstract extends ClassifierAbstract {
 	 */
 	int paramGetBlocksNumber() {
 		int blocksNumber = config.getAsInt(BLOCKS_NUMBER_FIELD);
-		return blocksNumber < 1 ? TransformerBasic.BLOCKS_NUMBER_DEFAULT : blocksNumber;
+		return blocksNumber < 1 ? BLOCKS_NUMBER_DEFAULT : blocksNumber;
 	}
 	
 	
@@ -339,7 +348,7 @@ class TransformerClassifierAbstract extends ClassifierAbstract {
 	 * @return this classifier.
 	 */
 	TransformerClassifierAbstract paramSetBlocksNumber(int blockNumber) {
-		blockNumber = blockNumber < 1 ? TransformerBasic.BLOCKS_NUMBER_DEFAULT : blockNumber;
+		blockNumber = blockNumber < 1 ? BLOCKS_NUMBER_DEFAULT : blockNumber;
 		config.put(BLOCKS_NUMBER_FIELD, blockNumber);
 		return this;
 	}
