@@ -136,6 +136,12 @@ public class NeuronValueMatrix extends MatrixImpl implements NeuronValue {
 
 	
 	@Override
+	public boolean canInvertWise() {
+		throw new RuntimeException("Not implemented yet");
+	}
+
+
+	@Override
 	public NeuronValue inverse() {
 		throw new RuntimeException("Not implemented yet");
 	}
@@ -315,4 +321,21 @@ public class NeuronValueMatrix extends MatrixImpl implements NeuronValue {
 	}
 
 
+	/**
+	 * Creating matrix value from matrix.
+	 * @param matrix matrix.
+	 * @return matrix value.
+	 */
+	public static NeuronValueMatrix create(Matrix matrix) {
+		if (matrix == null) return null;
+		NeuronValueMatrix vMatrix = new NeuronValueMatrix(matrix.rows(), matrix.columns(), matrix.get(0, 0));
+		for (int row = 0; row < matrix.rows(); row++) {
+			for (int column = 0; column < matrix.columns(); column++) {
+				vMatrix.data[row][column] = matrix.get(row, column);
+			}
+		}
+		return vMatrix;
+	}
+	
+	
 }

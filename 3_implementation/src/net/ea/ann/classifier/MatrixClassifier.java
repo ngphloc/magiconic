@@ -15,6 +15,7 @@ import net.ea.ann.conv.filter.Filter2D;
 import net.ea.ann.core.Id;
 import net.ea.ann.core.Util;
 import net.ea.ann.core.function.Function;
+import net.ea.ann.core.function.Softmax;
 import net.ea.ann.core.value.Matrix;
 import net.ea.ann.core.value.NeuronValue;
 import net.ea.ann.mane.Error;
@@ -49,7 +50,7 @@ public class MatrixClassifier extends MatrixClassifierAbstract {
 	/**
 	 * Adjusting baseline.
 	 */
-	protected Matrix adjustBaseline = null;
+	protected Matrix adjustline = null;
 
 	
 	/**
@@ -98,42 +99,46 @@ public class MatrixClassifier extends MatrixClassifierAbstract {
 	public void reset() {
 		super.reset();
 		adjuster = null;
-		adjustBaseline = null;
+		adjustline = null;
+	}
+
+
+	@Override
+	void updateConfig() {
+		super.updateConfig();
+		if (adjuster != null) adjuster.paramSetInclude(this);
 	}
 
 
 	@Override
 	protected boolean initialize(Dimension inputSize1, Dimension outputSize1, Filter2D filter1, int depth1, boolean dual1, Dimension nCoreClasses2, int depth2) {
 		if (!super.initialize(inputSize1, outputSize1, filter1, depth1, dual1, nCoreClasses2, depth2)) return false;
-		if (!paramIsAdjust() || !paramIsBaseline()) return true;
+		this.adjustline = null;
+		if (!paramIsAdjust() || !paramIsBaseline() || !paramIsCreateAdjuster()) return true;
 		
 		int minAdjustDepth = Math.max((int)(Math.log(this.nut.size())/Math.log(MatrixNetworkImpl.BASE_DEFAULT)), 1);
 		int maxAdjustDepth = Math.max(Math.max(this.nut.size()-1, 1), minAdjustDepth);
 		int adjustDepth = Math.max(Math.max(depth1, depth2), minAdjustDepth);
 		adjustDepth = Math.min(adjustDepth, maxAdjustDepth);
 		Dimension size = this.nut.getOutputLayer().getSize();
-		this.adjustBaseline = null;
 		this.adjuster = new MatrixNetworkImpl(this.neuronChannel, this.nut.getActivateRef(), this.nut.getConvActivateRef(), this.idRef);
 		this.adjuster.paramSetInclude(this);
-		this.adjuster.setTrainer(new TaskTrainerLossEntropy());
+		if (paramIsEntropyTrainer()) this.adjuster.setTrainer(new TaskTrainerLossEntropy());
 		return new MatrixNetworkInitializer(adjuster).initialize(size, size, adjustDepth);
 	}
 
 
 	@Override
 	double[] weightsOfOutput(Matrix output, int groupIndex) {
-		if (adjuster == null) return super.weightsOfOutput(output, groupIndex);
+		if (this.baseline == null || this.adjustline == null) return super.weightsOfOutput(output, groupIndex);
 		NeuronValue[] values = getOutput(output, groupIndex);
-		if (this.baseline == null || this.adjustBaseline == null) return super.weightsOfOutput(output, groupIndex);
+		values = paramIsEntropyTrainer() ? Softmax.softmax(values) : values;
 		
-		NeuronValue zero = values[0].zero();
 		for (int classIndex = 0; classIndex < values.length; classIndex++) {
 			NeuronValue base = paramIsByColumn() ? this.baseline.get(classIndex, groupIndex) : this.baseline.get(groupIndex, classIndex);
-			NeuronValue adjustBase = paramIsByColumn() ? this.adjustBaseline.get(classIndex, groupIndex) : this.adjustBaseline.get(groupIndex, classIndex);
+			NeuronValue adjust = paramIsByColumn() ? this.adjustline.get(classIndex, groupIndex) : this.adjustline.get(groupIndex, classIndex);
 			//Following code lines are important due to apply baseline into determining class.
-			NeuronValue sim = values[classIndex].subtract(base);
-			sim = sim.max(zero);
-			sim = sim.multiply(adjustBase);
+			NeuronValue sim = values[classIndex].subtract(base).multiply(adjust);
 			values[classIndex] = sim;
 		}
 		return weightsOfOutput(values);
@@ -155,13 +160,15 @@ public class MatrixClassifier extends MatrixClassifierAbstract {
 	
 	@Override
 	public NeuronValue[] learnRaster(Iterable<Raster> sample) throws RemoteException {
+		updateConfig();
+		
 		Matrix sampleWeight = null;
 		if (paramIsSampleWeight()) {
 			this.sampleWeight = null;
 			List<Record> newsample = prelearn(sample);
 			learn(newsample);
 			learnVerify(newsample);
-			if (this.baseline != null) sampleWeight = paramIsByColumn() ? Matrix.softmaxByColumnInverse(this.baseline) : Matrix.softmaxByRowInverse(this.baseline);
+			if (this.baseline != null) sampleWeight = paramIsByColumn() ? Softmax.softmaxByColumnInverse(this.baseline) : Softmax.softmaxByRowInverse(this.baseline);
 		}
 		List<Record> newsample = prelearn(sample);
 		this.sampleWeight = sampleWeight;
@@ -171,7 +178,6 @@ public class MatrixClassifier extends MatrixClassifierAbstract {
 		this.sampleWeight = null;
 		
 		if (this.adjuster != null) {
-			this.adjuster.paramSetInclude(this);
 			List<Record> adjustSample = Util.newList(0);
 			for (Record record : newsample) {
 				Matrix output = evaluate(record.input());
@@ -191,33 +197,17 @@ public class MatrixClassifier extends MatrixClassifierAbstract {
 	
 	@Override
 	public void learnVerify(Iterable<Record> sample) {
-		if (adjuster == null) {
-			super.learnVerify(sample);
-			return;
-		}
 		this.baseline = null;
-		this.adjustBaseline = null;
+		this.adjustline = null;
 		if (!paramIsBaseline()) return;
 
-		this.baseline = calcBaseline(sample);
-		
-//		List<Matrix> outputList = Util.newList(0);
-//		for (Record inout : inouts) {
-//			Matrix output = evaluate(inout.input());
-//			if (output != null) outputList.add(output);
-//		}
-//		if (outputList.size() == 0) return;
-//		this.baseline = calcBaseline(outputList.toArray(new Matrix[] {}));
-//		
-//		List<Matrix> adjustOutputList = Util.newList(0);
-//		for (Matrix output : outputList) {
-//			try {
-//				Matrix adjustOutput = adjuster.evaluate(output);
-//				if (adjustOutput != null) adjustOutputList.add(adjustOutput);
-//			} catch (Throwable e) {Util.trace(e);}
-//		}
-//		if (adjustOutputList.size() == 0) return;
-//		this.adjustBaseline = calcBaseline(adjustOutputList.toArray(new Matrix[] {}));
+		if (paramIsAdjust()) {
+			Matrix[] lines = calcBaselineAdjust(sample, this.adjuster);
+			this.baseline = lines[0];
+			this.adjustline = lines[1];
+		}
+		else
+			this.baseline = calcBaseline(sample);
 	}
 
 	
@@ -295,7 +285,7 @@ abstract class MatrixClassifierAbstract extends ClassifierAbstract {
 			this.config.putAll(this.nut.getConfig());
 			this.nut.getConfig().putAll(this.config);
 		} catch (Throwable e) {Util.trace(e);}
-		this.nut.setTrainer(new TaskTrainerLossEntropy());
+		if (paramIsEntropyTrainer()) this.nut.setTrainer(new TaskTrainerLossEntropy());
 	}
 	
 	/**
@@ -337,9 +327,17 @@ abstract class MatrixClassifierAbstract extends ClassifierAbstract {
 	@Override
 	public void reset() {
 		super.reset();
+		nut.reset();
 		sampleWeight = null;
 	}
 
+	@Override
+	void updateConfig() {
+		super.updateConfig();
+		nut.paramSetInclude(this);
+	}
+
+	
 	@Override
 	protected boolean initialize(Dimension inputSize1, Dimension outputSize1, Filter2D filter1, int depth1, boolean dual1, Dimension outputSize2, int depth2) {
 		if (!super.initialize(inputSize1, outputSize1, filter1, depth1, dual1, outputSize2, depth2)) return false;
@@ -349,11 +347,11 @@ abstract class MatrixClassifierAbstract extends ClassifierAbstract {
 		int groupCount = getNumberOfGroups();
 		Dimension outputCombSize = paramIsByColumn() ? new Dimension(groupCount, outputCount) : new Dimension(outputCount, groupCount);
 		if (outputSize2 == null) {
-			if (!nut.initializeFixed(inputSize1, outputCombSize, filter1, depth1, dual1, outputSize2, depth2))
+			if (!nut.initializeByDepth(inputSize1, outputCombSize, filter1, depth1, dual1, outputSize2, depth2))
 				return false;
 		}
 		else {
-			if (!nut.initializeFixed(inputSize1, outputSize1, filter1, depth1, dual1, outputCombSize, depth2))
+			if (!nut.initializeByDepth(inputSize1, outputSize1, filter1, depth1, dual1, outputCombSize, depth2))
 				return false;
 		}
 		
@@ -385,9 +383,7 @@ abstract class MatrixClassifierAbstract extends ClassifierAbstract {
 	
 	@Override
 	protected Matrix evaluate(Matrix input, Object...params) {
-		try {
-			nut.getConfig().putAll(this.config);
-		} catch (Throwable e) {Util.trace(e);}
+		updateConfig();
 		return nut.evaluate0(input, params);
 	}
 
@@ -395,7 +391,7 @@ abstract class MatrixClassifierAbstract extends ClassifierAbstract {
 	@Override
 	protected Error[] learn(Iterable<Record> sample) {
 		try {
-			nut.getConfig().putAll(this.config);
+			updateConfig();
 			return nut.learn(sample);
 		} catch (Throwable e) {Util.trace(e);}
 		return null;

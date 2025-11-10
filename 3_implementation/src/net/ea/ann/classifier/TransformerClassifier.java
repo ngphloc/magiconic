@@ -14,6 +14,7 @@ import java.util.List;
 import net.ea.ann.conv.filter.Filter2D;
 import net.ea.ann.core.Id;
 import net.ea.ann.core.Util;
+import net.ea.ann.core.function.Softmax;
 import net.ea.ann.core.value.Matrix;
 import net.ea.ann.core.value.NeuronValue;
 import net.ea.ann.mane.Error;
@@ -50,7 +51,7 @@ public class TransformerClassifier extends TransformerClassifierAbstract {
 	/**
 	 * Adjusting baseline.
 	 */
-	protected Matrix adjustBaseline = null;
+	protected Matrix adjustline = null;
 
 	
 	/**
@@ -76,14 +77,22 @@ public class TransformerClassifier extends TransformerClassifierAbstract {
 	public void reset() {
 		super.reset();
 		adjuster = null;
-		adjustBaseline = null;
+		adjustline = null;
 	}
 
 
 	@Override
+	void updateConfig() {
+		super.updateConfig();
+		if (adjuster != null) adjuster.paramSetInclude(this);
+	}
+
+	
+	@Override
 	protected boolean initialize(Dimension inputSize1, Dimension outputSize1, Filter2D filter1, int depth1, boolean dual1, Dimension nCoreClasses2, int depth2) {
 		if (!super.initialize(inputSize1, outputSize1, filter1, depth1, dual1, nCoreClasses2, depth2)) return false;
-		if (!paramIsAdjust() || !paramIsBaseline()) return true;
+		this.adjustline = null;
+		if (!paramIsAdjust() || !paramIsBaseline() || !paramIsCreateAdjuster()) return true;
 
 		MatrixNetworkImpl nut = transformer.getOutputAdapter();
 		nut = nut != null ? nut : transformer.getOutputFFN();
@@ -92,28 +101,24 @@ public class TransformerClassifier extends TransformerClassifierAbstract {
 		int adjustDepth = Math.max(Math.max(depth1, depth2), minAdjustDepth);
 		adjustDepth = Math.min(adjustDepth, maxAdjustDepth);
 		Dimension size = nut.getOutputLayer().getSize();
-		this.adjustBaseline = null;
 		this.adjuster = new MatrixNetworkImpl(this.neuronChannel, nut.getActivateRef(), nut.getConvActivateRef(), this.idRef);
 		this.adjuster.paramSetInclude(this);
-		this.adjuster.setTrainer(new TaskTrainerLossEntropy());
+		if (paramIsEntropyTrainer()) this.adjuster.setTrainer(new TaskTrainerLossEntropy());
 		return new MatrixNetworkInitializer(adjuster).initialize(size, size, adjustDepth);
 	}
 
 
 	@Override
 	double[] weightsOfOutput(Matrix output, int groupIndex) {
-		if (adjuster == null) return super.weightsOfOutput(output, groupIndex);
+		if (this.baseline == null || this.adjustline == null) return super.weightsOfOutput(output, groupIndex);
 		NeuronValue[] values = getOutput(output, groupIndex);
-		if (this.baseline == null || this.adjustBaseline == null) return super.weightsOfOutput(output, groupIndex);
+		values = paramIsEntropyTrainer() ? Softmax.softmax(values) : values;
 		
-		NeuronValue zero = values[0].zero();
 		for (int classIndex = 0; classIndex < values.length; classIndex++) {
 			NeuronValue base = paramIsByColumn() ? this.baseline.get(classIndex, groupIndex) : this.baseline.get(groupIndex, classIndex);
-			NeuronValue adjustBase = paramIsByColumn() ? this.adjustBaseline.get(classIndex, groupIndex) : this.adjustBaseline.get(groupIndex, classIndex);
+			NeuronValue adjust = paramIsByColumn() ? this.adjustline.get(classIndex, groupIndex) : this.adjustline.get(groupIndex, classIndex);
 			//Following code lines are important due to apply baseline into determining class.
-			NeuronValue sim = values[classIndex].subtract(base);
-			sim = sim.max(zero);
-			sim = sim.multiply(adjustBase);
+			NeuronValue sim = values[classIndex].subtract(base).multiply(adjust);
 			values[classIndex] = sim;
 		}
 		return weightsOfOutput(values);
@@ -147,33 +152,17 @@ public class TransformerClassifier extends TransformerClassifierAbstract {
 	
 	@Override
 	public void learnVerify(Iterable<Record> sample) {
-		if (adjuster == null) {
-			super.learnVerify(sample);
-			return;
-		}
 		this.baseline = null;
-		this.adjustBaseline = null;
+		this.adjustline = null;
 		if (!paramIsBaseline()) return;
 		
-		this.baseline = calcBaseline(sample);
-
-//		List<Matrix> outputList = Util.newList(0);
-//		for (Record inout : inouts) {
-//			Matrix output = evaluate(inout.input());
-//			if (output != null) outputList.add(output);
-//		}
-//		if (outputList.size() == 0) return;
-//		this.baseline = calcBaseline(outputList.toArray(new Matrix[] {}));
-//		
-//		List<Matrix> adjustOutputList = Util.newList(0);
-//		for (Matrix output : outputList) {
-//			try {
-//				Matrix adjustOutput = adjuster.evaluate(output);
-//				if (adjustOutput != null) adjustOutputList.add(adjustOutput);
-//			} catch (Throwable e) {Util.trace(e);}
-//		}
-//		if (adjustOutputList.size() == 0) return;
-//		this.adjustBaseline = calcBaseline(adjustOutputList.toArray(new Matrix[] {}));
+		if (paramIsAdjust()) {
+			Matrix[] lines = calcBaselineAdjust(sample, this.adjuster);
+			this.baseline = lines[0];
+			this.adjustline = lines[1];
+		}
+		else
+			this.baseline = calcBaseline(sample);
 	}
 
 	
@@ -242,7 +231,7 @@ class TransformerClassifierAbstract extends ClassifierAbstract {
 			this.config.putAll(this.transformer.getConfig());
 			this.transformer.getConfig().putAll(this.config);
 		} catch (Throwable e) {Util.trace(e);}
-		this.transformer.setTrainer(new TaskTrainerLossEntropy());
+		if (paramIsEntropyTrainer()) this.transformer.setTrainer(new TaskTrainerLossEntropy());
 	}
 
 	
@@ -256,24 +245,59 @@ class TransformerClassifierAbstract extends ClassifierAbstract {
 
 	
 	@Override
+	public void reset() {
+		super.reset();
+		transformer.reset();
+	}
+
+
+	@Override
+	void updateConfig() {
+		super.updateConfig();
+		transformer.updateConfig(this.config);
+	}
+
+
+	@Override
 	protected boolean initialize(Dimension inputSize1, Dimension outputSize1, Filter2D filter1, int depth1, boolean dual1, Dimension outputSize2, int depth2) {
 		if (!super.initialize(inputSize1, outputSize1, filter1, depth1, dual1, outputSize2, depth2)) return false;
+		
 		TransformerInitializer initializer = new TransformerInitializer(this.transformer);
 		if (!initializer.initializeOnlyEncoder(inputSize1.height, inputSize1.width, depth1, paramGetBlocksNumber())) return false;
 		
 		int outputCount = this.outputClassMaps.get(0).size();
 		int groupCount = getNumberOfGroups();
 		Dimension outputCombSize = paramIsByColumn() ? new Dimension(groupCount, outputCount) : new Dimension(outputCount, groupCount);
+		depth1 = depth1 < 0 ? 0 : depth1;
+		depth2 = depth2 < 0 ? 0 : depth2;
 		if (outputSize2 == null) {
 			int depth = depth1 + depth2;
 			depth = depth > 1 ? depth-1 : depth;
-			if (!transformer.setOutputAdapter(outputCombSize, filter1, depth, dual1, null, 0))
+			depth = depth < 0 ? 0 : depth;
+			if (!transformer.setOutputFFN(outputCombSize, filter1, depth, dual1, null, 0))
 				return false;
 		}
 		else {
-			depth1 = depth1 > 1 ? depth1-1 : depth1;
-			if (!transformer.setOutputAdapter(outputSize1, filter1, depth1, dual1, outputCombSize, depth2))
-				return false;
+			if (depth1 <= 0 && depth2 <= 0) {
+				if (!transformer.setOutputFFN(outputCombSize, filter1, 0, dual1, null, 0)) return false;
+			}
+			else if (depth1 > 0 && depth2 <= 0) {
+				if (!transformer.setOutputFFN(outputCombSize, filter1, depth1-1, dual1, null, 0)) return false;
+			}
+			else if (depth1 <= 0 && depth2 > 0) {
+				if (!transformer.setOutputFFN(outputCombSize, filter1, depth2-1, dual1, null, 0)) return false;
+			}
+			else if (depth1 == 1) {
+				if (depth2 == 1) {
+					if (!transformer.setOutputFFN(outputCombSize, filter1, 1, dual1, null, 0)) return false;
+				}
+				else {
+					if (!transformer.setOutputFFN(outputSize1, filter1, 1, dual1, outputCombSize, depth2-1)) return false;
+				}
+			}
+			else {
+				if (!transformer.setOutputFFN(outputSize1, filter1, depth1-1, dual1, outputCombSize, depth2)) return false;
+			}
 		}
 		
 		Matrix output = getOutput();
@@ -286,11 +310,6 @@ class TransformerClassifierAbstract extends ClassifierAbstract {
 				output.columns() != this.outputClassMaps.get(0).size()) return false;
 		}
 		
-		MatrixNetworkImpl outputAdapter = transformer.getOutputAdapter();
-		if (outputAdapter != null) {
-			transformer.removeOutputAdapter();
-			transformer.setOutputFFN(outputAdapter);
-		}
 		return true;
 	}
 
@@ -310,9 +329,7 @@ class TransformerClassifierAbstract extends ClassifierAbstract {
 	
 	@Override
 	protected Matrix evaluate(Matrix input, Object...params) {
-		try {
-			transformer.getConfig().putAll(this.config);
-		} catch (Throwable e) {Util.trace(e);}
+		updateConfig();
 		return transformer.evaluate(input, params);
 	}
 
@@ -320,7 +337,7 @@ class TransformerClassifierAbstract extends ClassifierAbstract {
 	@Override
 	protected Error[] learn(Iterable<Record> sample) {
 		try {
-			transformer.getConfig().putAll(this.config);
+			updateConfig();
 			Iterable<net.ea.ann.transformer.Record> transformerSample = net.ea.ann.transformer.Record.create(sample);
 			net.ea.ann.transformer.Error[][] transformerErrors = transformer.learn(transformerSample);
 			if (transformerErrors == null || transformerErrors.length == 0 || transformerErrors[0] == null)

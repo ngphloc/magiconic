@@ -93,8 +93,7 @@ public class TransformerBasic extends NetworkAbstract implements Transformer, Ma
 	public TransformerBasic(int neuronChannel, Id idRef) {
 		super(idRef);
 		this.neuronChannel = neuronChannel = (neuronChannel < 1 ? 1 : neuronChannel);
-		this.config.put(Raster.NORM_FIELD, Raster.NORM_DEFAULT);
-		this.config.put(MatrixNetworkAbstract.VECTORIZED_FIELD, MatrixNetworkAbstract.VECTORIZED_DEFAULT);
+		this.config.putAll(TransformerBlock.defaultConfig());
 	}
 
 	
@@ -137,13 +136,31 @@ public class TransformerBasic extends NetworkAbstract implements Transformer, Ma
 	
 	
 	/**
+	 * Updating configuration.
+	 */
+	private void updateConfig() {
+		if (blocks == null) return;
+		for (int i = 0; i < blocks.length; i++) blocks[i].updateConfig(this.config);
+	}
+	
+	
+	/**
+	 * Updating configuration.
+	 * @param config configuration.
+	 */
+	void updateConfig(NetworkConfig config) {
+		this.config.putAll(config);
+		updateConfig();
+	}
+	
+	
+	/**
 	 * Creating transformer block.
 	 * @return transformer block.
 	 */
 	protected TransformerBlock createBlock() {
 		TransformerBlock block = new TransformerBlock(this.neuronChannel, idRef);
-		block.paramSetNorm(this.paramIsNorm());
-		block.paramSetVectorized(this.paramIsVectorized());
+		block.updateConfig(this.config);
 		return block;
 	}
 	
@@ -416,12 +433,51 @@ public class TransformerBasic extends NetworkAbstract implements Transformer, Ma
 	
 	
 	/**
+	 * Setting feed-forward network.
+	 * @param outputSize output size.
+	 * @param outputDepth output depth.
+	 * @return true if setting is successful.
+	 */
+	public boolean setOutputFFN(Dimension outputSize, int outputDepth) {
+		return validate() ? get(size()-1).setFFN(outputSize, outputDepth) : false;
+	}
+
+	
+	/**
+	 * Setting feed-forward network.
+	 * @param middleSize middle size.
+	 * @param middleFilter middle filter.
+	 * @param middleDepth middle depth.
+	 * @param middleDual middle dual mode.
+	 * @param finalSize final size.
+	 * @param finalDepth final depth.
+	 * @return true if setting is successful.
+	 */
+	public boolean setOutputFFN(Dimension middleSize, Filter2D middleFilter, int middleDepth, boolean middleDual, Dimension finalSize, int finalDepth) {
+		return validate() ? get(size()-1).setFFN(middleSize, middleFilter, middleDepth, middleDual, finalSize, finalDepth) : false;
+	}
+	
+
+	/**
+	 * Setting feed-forward network.
+	 * @param middleSize middle size.
+	 * @param middleFilterStride middle filter stride.
+	 * @param middleDepth middle depth.
+	 * @param middleDual middle dual mode.
+	 * @param finalSize final size.
+	 * @param finalDepth final depth.
+	 * @return true if setting is successful.
+	 */
+	public boolean setOutputFFN(Dimension middleSize, Dimension middleFilterStride, int middleDepth, boolean middleDual, Dimension finalSize, int finalDepth) {
+		return validate() ? get(size()-1).setFFN(middleSize, middleFilterStride, middleDepth, middleDual, finalSize, finalDepth) : false;
+	}
+
+		
+	/**
 	 * Getting size of trainers.
 	 * @return size of trainers.
 	 */
-	int getTrainerSize() {
-		return trainers.size();
-	}
+	int getTrainerSize() {return trainers.size();}
 	
 	
 	/**
@@ -429,18 +485,14 @@ public class TransformerBasic extends NetworkAbstract implements Transformer, Ma
 	 * @param index specified index.
 	 * @return trainer at specified index.
 	 */
-	TaskTrainer getTrainer(int index) {
-		return trainers.get(index);
-	}
+	TaskTrainer getTrainer(int index) {return trainers.get(index);}
 	
 	
 	/**
 	 * Getting trainer.
 	 * @return the first trainer.
 	 */
-	public TaskTrainer getTrainer() {
-		return trainers.size() > 0 ? trainers.get(0) : null;
-	}
+	public TaskTrainer getTrainer() {return trainers.size() > 0 ? trainers.get(0) : null;}
 	
 	
 	/**
@@ -448,9 +500,7 @@ public class TransformerBasic extends NetworkAbstract implements Transformer, Ma
 	 * @param trainer specified trainer.
 	 * @return adding is successful.
 	 */
-	boolean addTrainer(TaskTrainer trainer) {
-		return trainers.add(trainer);
-	}
+	boolean addTrainer(TaskTrainer trainer) {return trainers.add(trainer);}
 	
 	
 	/**
@@ -458,17 +508,13 @@ public class TransformerBasic extends NetworkAbstract implements Transformer, Ma
 	 * @param trainer specified trainer.
 	 * @return removal is successful.
 	 */
-	boolean removeTrainer(TaskTrainer trainer) {
-		return trainers.remove(trainer);
-	}
+	boolean removeTrainer(TaskTrainer trainer) {return trainers.remove(trainer);}
 	
 	
 	/**
 	 * Clearing trainer.
 	 */
-	void clearTrainers() {
-		trainers.clear();
-	}
+	void clearTrainers() {trainers.clear();}
 	
 	
 	/**
@@ -511,6 +557,8 @@ public class TransformerBasic extends NetworkAbstract implements Transformer, Ma
 	 */
 	protected Matrix evaluate(Matrix inputY, Matrix inputX, boolean[][] inputMask, Object...params) {
 		if (!validate()) return null;
+		updateConfig();
+			
 		Matrix output = blocks[0].evaluate(inputY, null, inputMask, params);
 		int vecRows = blocks[0].getVecRows();
 		for (int i = 1; i < blocks.length; i++) {
@@ -560,6 +608,8 @@ public class TransformerBasic extends NetworkAbstract implements Transformer, Ma
 	 */
 	protected Error[][] backward(Error[] errors, double learningRate) {
 		if (!validate()) return null;
+		updateConfig();
+
 		Error[] outputErrors = null;
 		List<Error[]> attachOutputErrorsList = Util.newList(0);
 		for (int i = blocks.length-1; i >= 0; i--) {
@@ -727,50 +777,50 @@ public class TransformerBasic extends NetworkAbstract implements Transformer, Ma
 	}
 
 
-	/**
-	 * Checking normalization mode.
-	 * @return normalization mode in rang [0, 1].
-	 */
-	boolean paramIsNorm() {
-		if (config.containsKey(Raster.NORM_FIELD))
-			return config.getAsBoolean(Raster.NORM_FIELD);
-		else
-			return Raster.NORM_DEFAULT;
-	}
-
-
-	/**
-	 * Setting normalization mode.
-	 * @param isNorm normalization mode in rang [0, 1]..
-	 * @return this transformer.
-	 */
-	TransformerBasic paramSetNorm(boolean isNorm) {
-		config.put(Raster.NORM_FIELD, isNorm);
-		return this;
-	}
-
-	
-	/**
-	 * Checking vectorization mode.
-	 * @return vectorization mode.
-	 */
-	boolean paramIsVectorized() {
-		if (config.containsKey(MatrixNetworkAbstract.VECTORIZED_FIELD))
-			return config.getAsBoolean(MatrixNetworkAbstract.VECTORIZED_FIELD);
-		else
-			return MatrixNetworkAbstract.VECTORIZED_DEFAULT;
-	}
-
-
-	/**
-	 * Setting vectorization mode.
-	 * @param vectorized vectorization mode.
-	 * @return this network.
-	 */
-	TransformerBasic paramSetVectorized(boolean vectorized) {
-		config.put(MatrixNetworkAbstract.VECTORIZED_FIELD, vectorized);
-		return this;
-	}
+//	/**
+//	 * Checking normalization mode.
+//	 * @return normalization mode in rang [0, 1].
+//	 */
+//	boolean paramIsNorm() {
+//		if (config.containsKey(Raster.NORM_FIELD))
+//			return config.getAsBoolean(Raster.NORM_FIELD);
+//		else
+//			return Raster.NORM_DEFAULT;
+//	}
+//
+//
+//	/**
+//	 * Setting normalization mode.
+//	 * @param isNorm normalization mode in rang [0, 1]..
+//	 * @return this transformer.
+//	 */
+//	TransformerBasic paramSetNorm(boolean isNorm) {
+//		config.put(Raster.NORM_FIELD, isNorm);
+//		return this;
+//	}
+//
+//	
+//	/**
+//	 * Checking vectorization mode.
+//	 * @return vectorization mode.
+//	 */
+//	boolean paramIsVectorized() {
+//		if (config.containsKey(MatrixNetworkAbstract.VECTORIZED_FIELD))
+//			return config.getAsBoolean(MatrixNetworkAbstract.VECTORIZED_FIELD);
+//		else
+//			return MatrixNetworkAbstract.VECTORIZED_DEFAULT;
+//	}
+//
+//
+//	/**
+//	 * Setting vectorization mode.
+//	 * @param vectorized vectorization mode.
+//	 * @return this network.
+//	 */
+//	TransformerBasic paramSetVectorized(boolean vectorized) {
+//		config.put(MatrixNetworkAbstract.VECTORIZED_FIELD, vectorized);
+//		return this;
+//	}
 
 	
 	/**
@@ -787,8 +837,6 @@ public class TransformerBasic extends NetworkAbstract implements Transformer, Ma
 	}
 
 	
-
-
 }
 
 
@@ -859,9 +907,7 @@ class TransformerBlock implements Cloneable, Serializable {
 	TransformerBlock(int neuronChannel, Id idRef) {
 		if (idRef != null) this.idRef = idRef;
 		this.neuronChannel = neuronChannel = (neuronChannel < 1 ? 1 : neuronChannel);
-
-		this.config.put(Raster.NORM_FIELD, Raster.NORM_DEFAULT);
-		this.config.put(MatrixNetworkAbstract.VECTORIZED_FIELD, MatrixNetworkAbstract.VECTORIZED_DEFAULT);
+		this.config.putAll(defaultConfig());
 	}
 
 	
@@ -871,6 +917,162 @@ class TransformerBlock implements Cloneable, Serializable {
 	 */
 	TransformerBlock(int neuronChannel) {
 		this(neuronChannel, null);
+	}
+
+	
+	/**
+	 * Creating attention.
+	 * @return attention.
+	 */
+	protected Attention createAttention() {return new Attention();}
+	
+	
+	/**
+	 * Creating feed-forward network.
+	 * @return feed-forward network.
+	 */
+	protected MatrixNetworkImpl createFFN() {
+		MatrixNetworkImpl ffn = new MatrixNetworkImpl(this.neuronChannel, null, null, idRef);
+		try {
+			ffn.getConfig().putAll(this.config);
+		} catch (Throwable e) {Util.trace(e);}
+		return ffn;
+	}
+	
+	
+	/**
+	 * Creating output adapter.
+	 * @return output adapter.
+	 */
+	MatrixNetworkImpl createOutputAdapter() {
+		MatrixNetworkImpl outputAdapter = new MatrixNetworkImpl(this.neuronChannel, null, null, idRef);
+		try {
+			outputAdapter.getConfig().putAll(this.config);
+		} catch (Throwable e) {Util.trace(e);}
+		return outputAdapter;
+	}
+
+	
+	/**
+	 * Creating default configuration.
+	 * @return default configuration.
+	 */
+	static NetworkConfig defaultConfig() {
+		NetworkConfig config = new NetworkConfig();
+		config.put(Raster.NORM_FIELD, Raster.NORM_DEFAULT);
+		config.put(MatrixNetworkAbstract.VECTORIZED_FIELD, MatrixNetworkAbstract.VECTORIZED_DEFAULT);
+		return config;
+	}
+	
+	
+	/**
+	 * Updating configuration.
+	 */
+	private void updateConfig() {
+		try {
+			if (ffn != null) ffn.getConfig().putAll(this.config);
+			if (outputAdapter != null) outputAdapter.getConfig().putAll(this.config);
+		} catch (Throwable e) {Util.trace(e);}
+	}
+	
+	
+	/**
+	 * Updating configuration.
+	 * @param config configuration.
+	 */
+	void updateConfig(NetworkConfig config) {
+		try {
+			this.config.putAll(config);
+		} catch (Throwable e) {Util.trace(e);}
+		updateConfig();
+	}
+
+	
+	/**
+	 * Initialize matrix neural network.
+	 * @param middleSize middle size.
+	 * @param middleFilter middle filter.
+	 * @param middleDepth middle depth.
+	 * @param middleDual middle dual mode.
+	 * @param finalSize final size.
+	 * @param finalDepth final depth.
+	 * @return true if setting is successful.
+	 */
+	private boolean initializeMANE(MatrixNetworkImpl mane, Dimension inputSize, Dimension middleSize, Filter2D middleFilter, int middleDepth, boolean middleDual, Dimension finalSize, int finalDepth) {
+		if ((inputSize == null) || (middleSize == null && finalSize == null)) return false;
+		try {
+			mane.getConfig().putAll(this.config);
+		} catch (Throwable e) {Util.trace(e);}
+		return mane.initializeByDepth(inputSize, middleSize, middleFilter, middleDepth, middleDual, finalSize, finalDepth);
+	}
+	
+	
+	/**
+	 * Initialize matrix neural network.
+	 * @param middleSize middle size.
+	 * @param middleFilter middle filter.
+	 * @param middleDepth middle depth.
+	 * @param middleDual middle dual mode.
+	 * @param finalSize final size.
+	 * @param finalDepth final depth.
+	 * @return true if setting is successful.
+	 */
+	private boolean initializeMANE(MatrixNetworkImpl mane, Dimension inputSize, Dimension middleSize, Dimension middleFilterStride, int middleDepth, boolean middleDual, Dimension finalSize, int finalDepth) {
+		if ((inputSize == null) || (middleSize == null && finalSize == null)) return false;
+		try {
+			mane.getConfig().putAll(this.config);
+		} catch (Throwable e) {Util.trace(e);}
+		return mane.initializeByDepth(inputSize, middleSize, middleFilterStride, middleDepth, middleDual, finalSize, finalDepth);
+	}
+
+	
+	/**
+	 * Initializing attention with number of heads, sample size, model dimension, key dimension, value dimension, other sample size, other model dimension, and depth of feed forward network.
+	 * @param h number of heads. Default number of heads is {@link Attention0#HEADS_NUMBER_DEFAULT}.
+	 * @param n sample size.
+	 * @param dm model dimension. Default model dimension is {@link Attention0#MODEL_DIMENSION_DEFAULT}.
+	 * @param dk key dimension. Default key dimension is {@link Attention0#KEY_DIMENSION_DEFAULT}.
+	 * @param dv value dimension. Default value dimension is {@link Attention0#VALUE_DIMENSION_DEFAULT}.
+	 * @param m other sample size.
+	 * @param d other model dimension. Default other model dimension is {@link Attention0#MODEL_DIMENSION_DEFAULT}.
+	 * @param ffnDepth depth of feed forward network.
+	 * @return true if initialization is successful.
+	 */
+	boolean initialize(int h, int n, int dm, int dk, int dv, int m, int d, int ffnDepth) {
+		this.ffn = createFFN();
+		NeuronValue zero = this.ffn.newNeuronValue().zero();
+		this.attention = createAttention();
+		if (!this.attention.initialize(h, n, dm, dk, dv, m, d, zero)) return false;
+		
+		ffnDepth = ffnDepth < 1 ? MatrixNetworkImpl.DEPTH_DEFAULT : ffnDepth;
+		Dimension size = new Dimension(this.attention.dm(), this.attention.n());
+		if (!new MatrixNetworkInitializer(this.ffn).initialize(size, size, ffnDepth)) return false;
+		
+		return true;
+	}
+	
+	
+	/**
+	 * Initializing attention with number of heads, sample size, model dimension, key dimension, value dimension, and depth of feed forward network.
+	 * @param h number of heads. Default number of heads is {@link Attention0#HEADS_NUMBER_DEFAULT}.
+	 * @param n sample size.
+	 * @param dm model dimension. Default model dimension is {@link Attention0#MODEL_DIMENSION_DEFAULT}.
+	 * @param dk key dimension. Default key dimension is {@link Attention0#KEY_DIMENSION_DEFAULT}.
+	 * @param dv value dimension. Default value dimension is {@link Attention0#VALUE_DIMENSION_DEFAULT}.
+	 * @param ffnDepth depth of feed forward network.
+	 * @return true if initialization is successful.
+	 */
+	boolean initialize(int h, int n, int dm, int dk, int dv, int ffnDepth) {
+		return initialize(h, n, dm, dk, dv, 0, 0, ffnDepth);
+	}
+	
+	
+	/**
+	 * Checking whether this block has X input.
+	 * @return whether this block has X input.
+	 */
+	boolean containsX() {
+		return validate() ? attention.X() != null : false;
 	}
 
 	
@@ -899,7 +1101,7 @@ class TransformerBlock implements Cloneable, Serializable {
 	 */
 	boolean setFFN(MatrixNetworkImpl ffn) {
 		if (!validate() || ffn == null || ffn.paramIsNorm() != this.paramIsNorm() || ffn.paramIsVectorized() != this.paramIsVectorized()) return false;
-		Dimension ffnSize = ffn.getInputLayer().getSize();
+		Dimension ffnSize = ffn.getInputLayer().getSizeByVecRows();
 		if (this.attention.n() != ffnSize.height || this.attention.dm() != ffnSize.width) return false;
 		if (this.outputAdapter == null) {
 			this.ffn = ffn;
@@ -915,19 +1117,61 @@ class TransformerBlock implements Cloneable, Serializable {
 	
 	
 	/**
-	 * Removing feed-forward network.
+	 * Setting feed-forward network.
+	 * @param inputSize input size.
+	 * @param ffnOutputSize output size of feed-forward network.
+	 * @param ffnDepth depth of feed-forward network.
+	 * @return true if initialization is successful.
 	 */
-	public void removeFFN() {ffn = null;}
-	
-	
-	/**
-	 * Checking whether this block has X input.
-	 * @return whether this block has X input.
-	 */
-	boolean containsX() {
-		return validate() ? attention.X() != null : false;
+	public boolean setFFN(Dimension ffnOutputSize, int ffnDepth) {
+		return setFFN(null, (Filter2D)null, 0, false, ffnOutputSize, ffnDepth);
 	}
 
+	
+	/**
+	 * Setting feed-forward network.
+	 * @param middleSize middle size.
+	 * @param middleFilter middle filter.
+	 * @param middleDepth middle depth.
+	 * @param middleDual middle dual mode.
+	 * @param finalSize final size.
+	 * @param finalDepth final depth.
+	 * @return true if setting is successful.
+	 */
+	boolean setFFN(Dimension middleSize, Filter2D middleFilter, int middleDepth, boolean middleDual, Dimension finalSize, int finalDepth) {
+		MatrixNetworkImpl ffn = createFFN();
+		Dimension attentionSize = new Dimension(this.attention.dm(), this.attention.n());
+		if (!initializeMANE(ffn, attentionSize, middleSize, middleFilter, middleDepth, middleDual, finalSize, finalDepth)) return false;
+		return setFFN(ffn);
+	}
+
+	
+	/**
+	 * Setting feed-forward network.
+	 * @param middleSize middle size.
+	 * @param middleFilterStride middle filter stride.
+	 * @param middleDepth middle depth.
+	 * @param middleDual middle dual mode.
+	 * @param finalSize final size.
+	 * @param finalDepth final depth.
+	 * @return true if setting is successful.
+	 */
+	boolean setFFN(Dimension middleSize, Dimension middleFilterStride, int middleDepth, boolean middleDual, Dimension finalSize, int finalDepth) {
+		MatrixNetworkImpl ffn = createFFN();
+		Dimension attentionSize = new Dimension(this.attention.dm(), this.attention.n());
+		if (!initializeMANE(ffn, attentionSize, middleSize, middleFilterStride, middleDepth, middleDual, finalSize, finalDepth)) return false;
+		return setFFN(ffn);
+	}
+
+	
+	/**
+	 * Removing feed-forward network.
+	 */
+	public void removeFFN() {
+		ffn = null;
+		outputAdapter = null;
+	}
+	
 	
 	/**
 	 * Getting output adapter.
@@ -974,13 +1218,9 @@ class TransformerBlock implements Cloneable, Serializable {
 	 * @return true if setting is successful.
 	 */
 	boolean setOutputAdapter(Dimension middleSize, Filter2D middleFilter, int middleDepth, boolean middleDual, Dimension finalSize, int finalDepth) {
-		if (middleSize == null && finalSize == null) return false;
 		Dimension ffnOutputSize = this.ffn.getOutputLayer().getSize();
-		MatrixNetworkImpl outputAdapter = new MatrixNetworkImpl(this.neuronChannel, null, null, idRef);
-		outputAdapter.paramSetNorm(paramIsNorm());
-		outputAdapter.paramSetVectorized(paramIsVectorized());
-		
-		if (!new MatrixNetworkInitializer(outputAdapter).initializeFixed(ffnOutputSize, middleSize, middleFilter, middleDepth, middleDual, finalSize, finalDepth)) return false;
+		MatrixNetworkImpl outputAdapter = createOutputAdapter();
+		if (!initializeMANE(outputAdapter, ffnOutputSize, middleSize, middleFilter, middleDepth, middleDual, finalSize, finalDepth)) return false;
 		return setOutputAdapter(outputAdapter);
 	}
 
@@ -996,13 +1236,9 @@ class TransformerBlock implements Cloneable, Serializable {
 	 * @return true if setting is successful.
 	 */
 	boolean setOutputAdapter(Dimension middleSize, Dimension middleFilterStride, int middleDepth, boolean middleDual, Dimension finalSize, int finalDepth) {
-		if (middleSize == null && finalSize == null) return false;
 		Dimension ffnOutputSize = this.ffn.getOutputLayer().getSize();
 		MatrixNetworkImpl outputAdapter = new MatrixNetworkImpl(this.neuronChannel, null, null, idRef);
-		outputAdapter.paramSetNorm(paramIsNorm());
-		outputAdapter.paramSetVectorized(paramIsVectorized());
-		
-		if (!new MatrixNetworkInitializer(outputAdapter).initializeFixed(ffnOutputSize, middleSize, middleFilterStride, middleDepth, middleDual, finalSize, finalDepth)) return false;
+		if (!initializeMANE(outputAdapter, ffnOutputSize, middleSize, middleFilterStride, middleDepth, middleDual, finalSize, finalDepth)) return false;
 		return setOutputAdapter(outputAdapter);
 	}
 
@@ -1091,66 +1327,6 @@ class TransformerBlock implements Cloneable, Serializable {
 	
 	
 	/**
-	 * Creating attention.
-	 * @return attention.
-	 */
-	protected Attention createAttention() {return new Attention();}
-	
-	
-	/**
-	 * Creating feed-forward network.
-	 * @return feed-forward network.
-	 */
-	protected MatrixNetworkImpl createFFN() {
-		MatrixNetworkImpl ffn = new MatrixNetworkImpl(this.neuronChannel, null, null, idRef);
-		ffn.paramSetNorm(this.paramIsNorm());
-		ffn.paramSetVectorized(paramIsVectorized());
-		return ffn;
-	}
-	
-	
-	/**
-	 * Initializing attention with number of heads, sample size, model dimension, key dimension, value dimension, other sample size, other model dimension, and depth of feed forward network.
-	 * @param h number of heads. Default number of heads is {@link Attention0#HEADS_NUMBER_DEFAULT}.
-	 * @param n sample size.
-	 * @param dm model dimension. Default model dimension is {@link Attention0#MODEL_DIMENSION_DEFAULT}.
-	 * @param dk key dimension. Default key dimension is {@link Attention0#KEY_DIMENSION_DEFAULT}.
-	 * @param dv value dimension. Default value dimension is {@link Attention0#VALUE_DIMENSION_DEFAULT}.
-	 * @param m other sample size.
-	 * @param d other model dimension. Default other model dimension is {@link Attention0#MODEL_DIMENSION_DEFAULT}.
-	 * @param ffnDepth depth of feed forward network.
-	 * @return true if initialization is successful.
-	 */
-	boolean initialize(int h, int n, int dm, int dk, int dv, int m, int d, int ffnDepth) {
-		this.ffn = createFFN();
-		NeuronValue zero = this.ffn.newNeuronValue().zero();
-		this.attention = createAttention();
-		if (!this.attention.initialize(h, n, dm, dk, dv, m, d, zero)) return false;
-		
-		ffnDepth = ffnDepth < 1 ? MatrixNetworkImpl.DEPTH_DEFAULT : ffnDepth;
-		Dimension size = new Dimension(this.attention.dm(), this.attention.n());
-		if (!new MatrixNetworkInitializer(this.ffn).initialize(size, size, ffnDepth)) return false;
-		
-		return true;
-	}
-	
-	
-	/**
-	 * Initializing attention with number of heads, sample size, model dimension, key dimension, value dimension, and depth of feed forward network.
-	 * @param h number of heads. Default number of heads is {@link Attention0#HEADS_NUMBER_DEFAULT}.
-	 * @param n sample size.
-	 * @param dm model dimension. Default model dimension is {@link Attention0#MODEL_DIMENSION_DEFAULT}.
-	 * @param dk key dimension. Default key dimension is {@link Attention0#KEY_DIMENSION_DEFAULT}.
-	 * @param dv value dimension. Default value dimension is {@link Attention0#VALUE_DIMENSION_DEFAULT}.
-	 * @param ffnDepth depth of feed forward network.
-	 * @return true if initialization is successful.
-	 */
-	boolean initialize(int h, int n, int dm, int dk, int dv, int ffnDepth) {
-		return initialize(h, n, dm, dk, dv, 0, 0, ffnDepth);
-	}
-	
-	
-	/**
 	 * Getting vectorization rows.
 	 * @return vectorization rows.
 	 */
@@ -1158,7 +1334,7 @@ class TransformerBlock implements Cloneable, Serializable {
 		if (!validate())
 			return 0;
 		else if ((paramIsVectorized()) && (ffn != null || outputAdapter != null))
-			return ffn != null ? ffn.getOutputLayer().getVecRows() : (outputAdapter != null ? outputAdapter.getOutputLayer().getVecRows() : 0);
+			return ffn != null ? ffn.getInputLayer().getVecRows() : (outputAdapter != null ? outputAdapter.getInputLayer().getVecRows() : 0);
 		else
 			return 0;
 	}
@@ -1174,6 +1350,8 @@ class TransformerBlock implements Cloneable, Serializable {
 	 */
 	Matrix evaluate(Matrix inputY, Matrix inputX, boolean[][] inputMask, Object...params) {
 		if (!validate()) return null;
+		updateConfig();
+		
 		Matrix A = attention.evaluate(inputY, inputX, inputMask, params);
 		if (ffn == null && outputAdapter == null) return A;
 		
@@ -1193,6 +1371,7 @@ class TransformerBlock implements Cloneable, Serializable {
 	 */
 	Error[] backward(Error[] errors, double learningRate) {
 		if (!validate() || errors == null || errors.length == 0) return null;
+		updateConfig();
 		
 		//Back-warding output adapter. 
 		net.ea.ann.mane.Error[] outputAdapterErrors = Error.extract(errors);
@@ -1271,6 +1450,7 @@ class TransformerBlock implements Cloneable, Serializable {
 	static void initParams(TransformerBlock block, Random rnd) {
 		if (block.attention != null) Attention.initParams(block.attention, rnd);
 		if (block.ffn != null) new MatrixNetworkAssoc(block.ffn).initParams(rnd);
+		if (block.outputAdapter != null) new MatrixNetworkAssoc(block.outputAdapter).initParams(rnd);
 	}
 
 
