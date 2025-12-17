@@ -7,9 +7,13 @@
  */
 package net.ea.ann.core.value;
 
+import java.util.Arrays;
+import java.util.List;
 import java.util.Random;
 
+import net.ea.ann.core.Util;
 import net.ea.ann.core.function.Function;
+import net.ea.ann.raster.Raster;
 import net.ea.ann.raster.Size;
 
 /**
@@ -93,6 +97,20 @@ public class MatrixStack implements Matrix {
 	
 	@Override
 	public int columns() {return matrices[0].columns();}
+
+	
+	/**
+	 * Getting width.
+	 * @return width.
+	 */
+	public int width() {return columns();}
+	
+	
+	/**
+	 * Getting height.
+	 * @return height.
+	 */
+	public int height() {return rows();}
 
 	
 	@Override
@@ -274,12 +292,29 @@ public class MatrixStack implements Matrix {
 	
 	@Override
 	public Matrix concatHorizontal(Matrix...matrices) {
-		throw new RuntimeException();
+		if (matrices == null || matrices.length == 0) return null;
+		int depth = depth();
+		Matrix[] result = new Matrix[depth];
+		for (int d = 0; d < depth; d++) {
+			Matrix[] array = new Matrix[matrices.length];
+			for (int i = 0; i < matrices.length; i++) array[i] = ((MatrixStack)matrices[i]).get(d);
+			result[d] = array[0].concatHorizontal(array);
+		}
+		return new MatrixStack(result);
 	}
 
+	
 	@Override
 	public Matrix concatVertical(Matrix...matrices) {
-		throw new RuntimeException();
+		if (matrices == null || matrices.length == 0) return null;
+		int depth = depth();
+		Matrix[] result = new Matrix[depth];
+		for (int d = 0; d < depth; d++) {
+			Matrix[] array = new Matrix[matrices.length];
+			for (int i = 0; i < matrices.length; i++) array[i] = ((MatrixStack)matrices[i]).get(d);
+			result[d] = array[0].concatVertical(array);
+		}
+		return new MatrixStack(result);
 	}
 
 
@@ -324,11 +359,61 @@ public class MatrixStack implements Matrix {
 
 	
 	/**
+	 * Accumulating stacks.
+	 * @param W stacks.
+	 * @param dW stack biases
+	 * @param factor factor.
+	 */
+	@SuppressWarnings("unused")
+	@Deprecated
+	private static void accum(MatrixStack[] W, Matrix[] dW, double factor) {
+		if (W == null || dW == null) return;
+		if (dW.length != W.length) throw new IllegalArgumentException();
+		MatrixStack[] stacks = null;
+		if (dW instanceof MatrixStack[])
+			stacks = (MatrixStack[])dW;
+		else {
+			stacks = new MatrixStack[dW.length];
+			for (int t = 0; t < stacks.length; t++) {
+				stacks[t] = dW[t] instanceof MatrixStack ? (MatrixStack)dW[t] : new MatrixStack(dW[t]);
+			}
+		}
+		for (int t = 0; t < stacks.length; t++) W[t] = (MatrixStack)W[t].add(stacks[t].multiply0(factor));
+	}
+
+	
+	/**
+	 * Calculating value sum of matrix stacks.
+	 * @param stacks matrix stacks.
+	 * @return value sum.
+	 */
+	public static NeuronValue valueSum(MatrixStack...stacks) {
+		if (stacks == null || stacks.length == 0) return null;
+		NeuronValue sum = Matrix.valueSum(stacks[0].matrices);
+		for (int i = 1; i < stacks.length; i++) {
+			sum = sum.add(Matrix.valueSum(stacks[i].matrices));
+		}
+		return sum;
+	}
+
+	
+	/**
+	 * Calculating value mean of matrix stacks.
+	 * @param stacks matrix stacks.
+	 * @return value mean.
+	 */
+	public static NeuronValue valueMean(MatrixStack...stacks) {
+		NeuronValue sum = valueSum(stacks);
+		return sum != null ? sum.divide((double)stacks.length) : null;
+	}
+
+	
+	/**
 	 * Calculating sum array.
 	 * @param arrays arrays.
 	 * @return sum array.
 	 */
-	public static MatrixStack[] sum(MatrixStack[]...arrays) {
+	public static MatrixStack[] sum2(MatrixStack[]...arrays) {
 		if (arrays == null || arrays.length == 0) return null;
 		MatrixStack[] sum = arrays[0];
 		for (int i = 1; i < arrays.length; i++) {
@@ -346,8 +431,8 @@ public class MatrixStack implements Matrix {
 	 * @param arrays arrays.
 	 * @return mean array.
 	 */
-	public static MatrixStack[] mean(MatrixStack[]...arrays) {
-		MatrixStack[] mean = sum(arrays);
+	public static MatrixStack[] mean2(MatrixStack[]...arrays) {
+		MatrixStack[] mean = sum2(arrays);
 		if (mean == null) return null;
 		for (int j = 0; j < mean.length; j++) mean[j] = (MatrixStack)mean[j].divide0(arrays.length);
 		return mean;
@@ -383,6 +468,35 @@ public class MatrixStack implements Matrix {
 			result[i] = (MatrixStack)stacks[i].divide0(value);
 		}
 		return result;
+	}
+
+	
+	/**
+	 * Copying source matrix stack to target matrix stack.
+	 * @param source source matrix stack.
+	 * @param target target matrix stack.
+	 */
+	static void copy(MatrixStack sourceStack, MatrixStack targetStack) {
+		for (int i = 0; i < targetStack.depth(); i++) Matrix.copy(sourceStack.matrices[i], targetStack.matrices[i]);
+	}
+
+	
+	/**
+	 * Copying source array to target matrix.
+	 * @param source source array.
+	 * @param target target matrix.
+	 */
+	static void copy(NeuronValue[] source, Matrix target) {
+		if (source == null || target == null) return;
+		int rows = target.rows();
+		int columns = target.columns();
+		for (int i = 0; i < rows; i++) {
+			int rowLength = i*columns;
+			for (int j = 0; j < columns; j++) {
+				int index = rowLength + j;
+				if (index < source.length) target.set(i, j, source[index]);
+			}
+		}
 	}
 
 	
@@ -433,26 +547,57 @@ public class MatrixStack implements Matrix {
 
 	
 	/**
-	 * Accumulating stacks.
-	 * @param W stacks.
-	 * @param dW stack biases
-	 * @param factor factor.
+	 * Flattening array of matrix stacks according to smaller channel.
+	 * @param stacks array of matrix stacks.
+	 * @param smallerChannel smaller channel.
+	 * @return flattened matrices.
 	 */
-	@SuppressWarnings("unused")
-	@Deprecated
-	private static void accum(MatrixStack[] W, Matrix[] dW, double factor) {
-		if (W == null || dW == null) return;
-		if (dW.length != W.length) throw new IllegalArgumentException();
-		MatrixStack[] stacks = null;
-		if (dW instanceof MatrixStack[])
-			stacks = (MatrixStack[])dW;
-		else {
-			stacks = new MatrixStack[dW.length];
-			for (int t = 0; t < stacks.length; t++) {
-				stacks[t] = dW[t] instanceof MatrixStack ? (MatrixStack)dW[t] : new MatrixStack(dW[t]);
+	public static Matrix[] flattenByChannel(MatrixStack[] stacks, int smallerChannel) {
+		List<Matrix> result = Util.newList(0);
+		for (MatrixStack stack : stacks) {
+			result.addAll(Arrays.asList(Matrix.flattenByChannel(stack.matrices, smallerChannel)));
+		}
+		return result.toArray(new Matrix[] {});
+	}
+	
+	
+	/**
+	 * Aggregating array of matrix stacks according to larger channel.
+	 * @param stacks array of matrix stacks.
+	 * @param largerChannel larger channel.
+	 * @return aggregated matrices.
+	 */
+	public static Matrix[] aggregateByChannel(MatrixStack[] stacks, int largerChannel) {
+		List<Matrix> result = Util.newList(0);
+		for (MatrixStack stack : stacks) {
+			result.addAll(Arrays.asList(Matrix.aggregateByChannel(stack.matrices, largerChannel)));
+		}
+		return result.toArray(new Matrix[] {});
+	}
+	
+	
+	/**
+	 * Extracting raster into matrix.
+	 * @param size size.
+	 * @param rows rows.
+	 * @param columns columns.
+	 * @param raster raster.
+	 * @param neuronChannel neuron channel.
+	 * @param isNorm flag to indicate whether pixel is normalized in range [0, 1].
+	 * @param ref reference to matrix, which can be null.
+	 * @return matrix.
+	 */
+	static Matrix toMatrix(Size size, Raster raster, int neuronChannel, boolean isNorm, Matrix ref) {
+		NeuronValue[] values = raster.toNeuronValues(neuronChannel, size, isNorm);
+		Matrix matrix = (ref == null) ? MatrixUtil.create(size, values[0]) : ref.create(size);
+		for (int j = 0; j < matrix.rows(); j++) {
+			int rowLength = j*matrix.columns();
+			for (int k = 0; k < matrix.columns(); k++) {
+				int index = rowLength + k;
+				matrix.set(j, k, values[index]);
 			}
 		}
-		for (int t = 0; t < stacks.length; t++) W[t] = (MatrixStack)W[t].add(stacks[t].multiply0(factor));
+		return matrix;
 	}
 
 

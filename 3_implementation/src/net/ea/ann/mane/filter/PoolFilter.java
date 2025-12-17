@@ -7,6 +7,8 @@
  */
 package net.ea.ann.mane.filter;
 
+import net.ea.ann.raster.Size;
+
 /**
  * This class represents a pooling filter.
  * 
@@ -36,15 +38,14 @@ public abstract class PoolFilter extends FilterAbstract {
 
 	
 	/**
-	 * Constructor with kernel width and height.
-	 * @param width kernel width.
-	 * @param height kernel height.
+	 * Constructor with size.
+	 * @param size size.
 	 */
-	protected PoolFilter(int width, int height) {
+	protected PoolFilter(Size size) {
 		super();
-		if (width < 1 || height < 1) throw new IllegalArgumentException();
-		this.width = width;
-		this.height = height;
+		if (size.width < 1 || size.height < 1) throw new IllegalArgumentException();
+		this.width = size.width;
+		this.height = size.height;
 	}
 
 	
@@ -59,5 +60,9 @@ public abstract class PoolFilter extends FilterAbstract {
 		return height;
 	}
 	
+	
+	@Override
+	public boolean applyActivate() {return false;}
+
 	
 }
