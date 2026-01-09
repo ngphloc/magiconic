@@ -12,17 +12,15 @@ import java.util.List;
 import net.ea.ann.core.Id;
 import net.ea.ann.core.Util;
 import net.ea.ann.core.function.Function;
+import net.ea.ann.core.value.MatrixUtil;
+import net.ea.ann.mane.FilterSpec;
+import net.ea.ann.mane.FilterSpec.PoolType;
+import net.ea.ann.mane.FilterSpec.Type;
 import net.ea.ann.mane.MatrixLayerAbstract;
 import net.ea.ann.mane.MatrixLayerAbstract.LayerSpec;
-import net.ea.ann.mane.MatrixLayerImpl;
 import net.ea.ann.mane.MatrixNetworkImpl;
 import net.ea.ann.mane.MatrixNetworkInitializer;
-import net.ea.ann.mane.Weight;
 import net.ea.ann.mane.WeightSpec;
-import net.ea.ann.mane.WeightTrans;
-import net.ea.ann.mane.filter.FilterSpec;
-import net.ea.ann.mane.filter.FilterSpec.Type;
-import net.ea.ann.raster.RasterAbstract;
 import net.ea.ann.raster.Size;
 import net.ea.ann.transformer.TransformerBasic;
 import net.hudup.core.parser.TextParserUtil;
@@ -30,7 +28,7 @@ import net.hudup.core.parser.TextParserUtil;
 /**
  * This class is an implementation of VGG blocks developed by Simonyan and Zisserman with support of matrix.
  * 
- * @author Simonyan and Zisserman, Loc Nguyen
+ * @author Simonyan and Zisserman, implemented by Loc Nguyen
  * @version 1.0
  *
  */
@@ -46,19 +44,25 @@ public class VGG extends MatrixNetworkImpl {
 	/**
 	 * Default base.
 	 */
-	final static int BASE = ZOOMOUT_DEFAULT;
+	private final static int BASE = ZOOMOUT_DEFAULT;
 	
 	
 	/**
 	 * Field for middle size.
 	 */
-	public final static String MIDDLE_SIZE_FIELD = "vgg_middle_size";
+	public final static String MIDDLE_SIZE_FIELD = "vgg_midsize";
 	
 	
 	/**
 	 * Default value for middle size.
 	 */
-	public final static String MIDDLE_SIZE_DEFAULT = MINSIZE + ", " + MINSIZE;
+	public final static Size MIDDLE_SIZE_DEFAULT = new Size(MINSIZE, MINSIZE);
+
+	
+	/**
+	 * Default text value for middle size.
+	 */
+	public final static String MIDDLE_SIZE_DEFAULT_TEXT = MINSIZE + ", " + MINSIZE;
 	
 	
 	/**
@@ -158,27 +162,27 @@ public class VGG extends MatrixNetworkImpl {
 
 	
 	/**
-	 * Field for including max-pooling filter mode.
+	 * Field for pool type.
 	 */
-	public final static String INCLUDE_MAXPOOL_FIELD = "vgg_include_maxpool";
+	public final static String POOL_TYPE_FIELD = "mane_pool_type";
 	
 	
 	/**
-	 * Default value for including max-pooling filter mode.
+	 * Default value for pool type.
 	 */
-	public final static boolean INCLUDE_MAXPOOL_DEFAULT = true;
+	public final static PoolType POOL_TYPE_DEFAULT = PoolType.max;
 
 	
 	/**
-	 * Field for transformer-based weight mode.
+	 * Field for weight type.
 	 */
-	public final static String TRANS_WEIGHT_FIELD = "mane_trans_weight";
+	public final static String WEIGHT_TYPE_FIELD = "mane_weight_type";
 	
 	
 	/**
-	 * Default value for transformer-based weight mode.
+	 * Default value for weight type.
 	 */
-	public final static boolean TRANS_WEIGHT_DEFAULT = false;
+	public final static net.ea.ann.mane.WeightSpec.Type WEIGHT_TYPE_DEFAULT = net.ea.ann.mane.WeightSpec.Type.normal;
 
 	
 	/**
@@ -190,7 +194,7 @@ public class VGG extends MatrixNetworkImpl {
 	 */
 	public VGG(int neuronChannel, Function activateRef, Function convActivateRef, Id idRef) {
 		super(neuronChannel, activateRef, convActivateRef, idRef);
-		config.put(MIDDLE_SIZE_FIELD, MIDDLE_SIZE_DEFAULT);
+		config.put(MIDDLE_SIZE_FIELD, MIDDLE_SIZE_DEFAULT_TEXT);
 		config.put(CONV_FIELD, CONV_DEFAULT);
 		config.put(BLOCKS_NUMBER_FIELD, BLOCKS_NUMBER_DEFAULT);
 		config.put(LAYERS_NUMBER_FIELD, LAYERS_NUMBER_DEFAULT);
@@ -198,8 +202,8 @@ public class VGG extends MatrixNetworkImpl {
 		config.put(FILTER_SIZE_FIELD, FILTER_SIZE_DEFAULT);
 		config.put(FFN_LENGTH_FIELD, FFN_LENGTH_DEFAULT);
 		config.put(COWEIGHT_FIELD, COWEIGHT_DEFAULT);
-		config.put(INCLUDE_MAXPOOL_FIELD, INCLUDE_MAXPOOL_DEFAULT);
-		config.put(TRANS_WEIGHT_FIELD, TRANS_WEIGHT_DEFAULT);
+		config.put(POOL_TYPE_FIELD, FilterSpec.poolTypeToInt(POOL_TYPE_DEFAULT));
+		config.put(WEIGHT_TYPE_FIELD, WeightSpec.typeToInt(WEIGHT_TYPE_DEFAULT));
 	}
 	
 
@@ -233,50 +237,6 @@ public class VGG extends MatrixNetworkImpl {
 	}
 
 	
-	@Override
-	protected MatrixLayerAbstract newLayer() {
-		MatrixLayerImpl layer = new MatrixLayerImpl(neuronChannel, activateRef, convActivateRef, idRef) {
-			
-			/**
-			 * Serial version UID for serializable class. 
-			 */
-			private static final long serialVersionUID = 1L;
-
-			@Override
-			protected Weight newWeight(Size sizeW1, Size sizeW2, LayerSpec layerSpec) {
-				if (!paramIsTransWeight() || sizeW2 != null || layerSpec == null)
-					return super.newWeight(sizeW1, sizeW2, layerSpec);
-				Size prevSize = layerSpec.prevSize, thisSize = layerSpec.size;
-				if (prevSize == null || thisSize == null)
-					return super.newWeight(sizeW1, sizeW2, layerSpec);
-				if (prevSize.width != thisSize.width || prevSize.height != thisSize.height)
-					return super.newWeight(sizeW1, sizeW2, layerSpec);
-				if (layerSpec.weightSpec == null || layerSpec.weightSpec.type != net.ea.ann.mane.WeightSpec.Type.transformer)
-					return super.newWeight(sizeW1, sizeW2, layerSpec);
-				
-				return WeightTrans.create(neuronChannel, prevSize, thisSize);
-			}
-
-			@Override
-			protected void updateParametersFromBackwardInfo(int recordCount, double learningRate) {
-				super.updateParametersFromBackwardInfo(recordCount, learningRate);
-				if ((this.weight == null) || !(this.weight instanceof WeightTrans)) return;
-				((WeightTrans)this.weight).updateParametersFromBackwardInfo(recordCount, learningRate);
-			}
-
-			@Override
-			protected void resetBackwardInfo() {
-				super.resetBackwardInfo();
-				if ((this.weight == null) || !(this.weight instanceof WeightTrans)) return;
-				((WeightTrans)this.weight).resetBackwardInfo();
-			}
-			
-		};
-		layer.setNetwork(this);
-		return layer;
-	}
-
-
 	/**
 	 * Initializing VGG model.
 	 * @param inputSize input size.
@@ -302,44 +262,58 @@ public class VGG extends MatrixNetworkImpl {
 		if (numbers == null) return false;
 		int[] heights = numbers[0];
 		int[] widths = numbers[1];
+		int[] tempHeights = new int[heights.length+1], tempWidths = new int[widths.length+1];
+		tempHeights[0] = inputSize.height;
+		tempWidths[0] = inputSize.width;
+		for (int i = 0; i < heights.length; i++) {
+			tempHeights[i+1] = heights[i];
+			tempWidths[i+1] = widths[i];
+		}
+		heights = tempHeights;
+		widths = tempWidths;
 
 		List<Size> blockSizes = Util.newList(0);
 		int power = 1;
 		for (int i = 0; i < heights.length; i++) {
-			if (i == 0 || i == heights.length-1) {
+			if (blockSizes.size() == 0) {
 				blockSizes.add(new Size(widths[i], heights[i], (int)Math.pow(filtersNumberPerLayer, power)));
 				power++;
+				continue;
 			}
-			else if (widths[i] != widths[i-1] || heights[i] != heights[i-1]) {
+			
+			int prevWidth = blockSizes.get(blockSizes.size()-1).width;
+			int prevHeight = blockSizes.get(blockSizes.size()-1).height;
+			if (widths[i] != prevWidth || heights[i] != prevHeight) {
 				blockSizes.add(new Size(widths[i], heights[i], (int)Math.pow(filtersNumberPerLayer, power)));
 				power++;
 			}
 		}
 		if (blockSizes.size() == 0) return false;
 		
-		int defaultNeuronChannel = RasterAbstract.RASTER_CHANNEL_DEFAULT;
-		boolean flatten = inputSize.depth <= 1 && neuronChannel < defaultNeuronChannel && neuronChannel == 1; //inputSize.depth is actually raster depth.
-		LayerSpec layerSpec0 = new MatrixLayerAbstract.LayerSpec(new Size(inputSize.width, inputSize.height, flatten?defaultNeuronChannel:1));
+		int rasterChannel = paramGetRasterChannel();
+		boolean flatten = MatrixUtil.isFlatten(inputSize.depth, this.neuronChannel, rasterChannel); //inputSize.depth is actually raster depth.
+		LayerSpec layerSpec0 = new MatrixLayerAbstract.LayerSpec(new Size(inputSize.width, inputSize.height, flatten?rasterChannel:1));
 		List<LayerSpec> layerSpecs = Util.newList(0);
 		layerSpecs.add(layerSpec0);
 		for (int i = 0; i < blockSizes.size(); i++) {
 			Size blockSize = blockSizes.get(i);
 			for (int j = 0; j < layersNumberPerBlock; j++) {
-				LayerSpec size = new LayerSpec(new Size(blockSize.width, blockSize.height, blockSize.depth));
-				if (layerSpecs.size() > 0) size.prevSize = layerSpecs.get(layerSpecs.size()-1).size;
-				if (paramIsTransWeight())
-					size.weightSpec = new WeightSpec(net.ea.ann.mane.WeightSpec.Type.transformer);
-				if (paramIsConv()) {
-					size.filterSpec = new FilterSpec(filterSize, filterSize, Type.kernel);
-					size.filterSpec.coweight = paramIsCoweight();
-					size.filterSpec.moveStride = false;
-				}
-				layerSpecs.add(size);
-			}
-			if (paramIsIncludeMaxPool() /*&& paramIsConv()*/) {
 				LayerSpec layerSpec = new LayerSpec(new Size(blockSize.width, blockSize.height, blockSize.depth));
 				if (layerSpecs.size() > 0) layerSpec.prevSize = layerSpecs.get(layerSpecs.size()-1).size;
+				layerSpec.weightSpec = new WeightSpec(paramGetWeightType());
+				if (paramIsConv()) {
+					layerSpec.filterSpec = new FilterSpec(filterSize, filterSize, Type.kernel);
+					layerSpec.filterSpec.coweight = paramIsCoweight();
+					layerSpec.filterSpec.moveStride = false;
+				}
+				layerSpecs.add(layerSpec);
+			}
+			if (i < blockSizes.size()-1) {
+				Size poolSize = new Size(blockSizes.get(i+1).width, blockSizes.get(i+1).height, blockSize.depth);
+				LayerSpec layerSpec = new LayerSpec(poolSize);
+				if (layerSpecs.size() > 0) layerSpec.prevSize = layerSpecs.get(layerSpecs.size()-1).size;
 				layerSpec.filterSpec = new FilterSpec(base, base, Type.pool);
+				layerSpec.filterSpec.poolType = paramGetPoolType();
 				layerSpec.filterSpec.coweight = paramIsCoweight();
 				layerSpec.filterSpec.moveStride = true;
 				layerSpecs.add(layerSpec);
@@ -348,7 +322,8 @@ public class VGG extends MatrixNetworkImpl {
 		if (outputSize == null || ffnLength < 1) return initialize(layerSpecs.toArray(new LayerSpec[] {}), false);
 		
 		Size lastSize = layerSpecs.get(layerSpecs.size()-1).size;
-		Size ffnSize = paramIsFFNFlatten() ? new Size(middleSize.width, lastSize.depth*middleSize.height, 1) :
+		Size ffnSize = paramIsFFNFlatten() ?
+			new Size(middleSize.width, lastSize.depth*middleSize.height, 1) :
 			new Size(middleSize.width, middleSize.height, lastSize.depth);
 		List<LayerSpec> ffnlLayerSpecs = Util.newList(0);
 		for (int i = 0; i < ffnLength-1; i++) {
@@ -392,24 +367,11 @@ public class VGG extends MatrixNetworkImpl {
 
 	
 	/**
-	 * Setting VGG middle size.
-	 * @param middleSize VGG middle size.
-	 * @return this VGG.
-	 */
-	VGG paramSetVGGMiddleSize(Size middleSize) {
-		int width = middleSize.width < 1 ? MINSIZE : middleSize.width;
-		int height = middleSize.height < 1 ? MINSIZE : middleSize.height;
-		config.put(MIDDLE_SIZE_FIELD, width + ", " + height);
-		return this;
-	}
-	
-	
-	/**
 	 * Getting VGG middle size.
+	 * @param sizeText size text.
 	 * @return VGG middle size.
 	 */
-	Size paramGetVGGMiddleSize() {
-		String sizeText = config.containsKey(MIDDLE_SIZE_FIELD) ? config.getAsString(MIDDLE_SIZE_FIELD) : MIDDLE_SIZE_DEFAULT;
+	public static Size paramGetVGGMiddleSize(String sizeText) {
 		List<Integer> lsize = TextParserUtil.parseListByClass(sizeText, Integer.class, ",");
 		int width = MINSIZE, height = MINSIZE;
 		if (lsize.size() == 1)
@@ -422,6 +384,29 @@ public class VGG extends MatrixNetworkImpl {
 		width = width < 1 ? MINSIZE : width;
 		height = height < 1 ? MINSIZE : height;
 		return new Size(width, height);
+	}
+	
+	
+	/**
+	 * Getting VGG middle size.
+	 * @return VGG middle size.
+	 */
+	public Size paramGetVGGMiddleSize() {
+		String sizeText = config.containsKey(MIDDLE_SIZE_FIELD) ? config.getAsString(MIDDLE_SIZE_FIELD) : MIDDLE_SIZE_DEFAULT_TEXT;
+		return paramGetVGGMiddleSize(sizeText);
+	}
+	
+	
+	/**
+	 * Setting VGG middle size.
+	 * @param middleSize VGG middle size.
+	 * @return this VGG.
+	 */
+	public VGG paramSetVGGMiddleSize(Size middleSize) {
+		int width = middleSize.width < 1 ? MINSIZE : middleSize.width;
+		int height = middleSize.height < 1 ? MINSIZE : middleSize.height;
+		config.put(MIDDLE_SIZE_FIELD, width + ", " + height);
+		return this;
 	}
 	
 	
@@ -613,47 +598,47 @@ public class VGG extends MatrixNetworkImpl {
 
 
 	/**
-	 * Checking including max-pooling mode.
-	 * @return including max-pooling mode.
+	 * Checking pooling filter type.
+	 * @return pooling filter type.
 	 */
-	boolean paramIsIncludeMaxPool() {
-		if (config.containsKey(INCLUDE_MAXPOOL_FIELD))
-			return config.getAsBoolean(INCLUDE_MAXPOOL_FIELD);
+	PoolType paramGetPoolType() {
+		if (config.containsKey(POOL_TYPE_FIELD))
+			return FilterSpec.intToPoolType(config.getAsInt(POOL_TYPE_FIELD));
 		else
-			return INCLUDE_MAXPOOL_DEFAULT;
+			return POOL_TYPE_DEFAULT;
 	}
 	
 	
 	/**
-	 * Setting including max-pooling mode.
-	 * @param includeMaxPool including max-pooling mode.
+	 * Setting pooling filter type.
+	 * @param poolType pooling filter type.
 	 * @return this classifier.
 	 */
-	VGG paramSetIncludeMaxPool(boolean includeMaxPool) {
-		config.put(INCLUDE_MAXPOOL_FIELD, includeMaxPool);
+	VGG paramSetPoolType(PoolType poolType) {
+		config.put(POOL_TYPE_FIELD, FilterSpec.poolTypeToInt(poolType));
 		return this;
 	}
 
 	
 	/**
-	 * Checking transformer-based weight mode.
-	 * @return transformer-based weight mode.
+	 * Getting weight type.
+	 * @return weight type.
 	 */
-	boolean paramIsTransWeight() {
-		if (config.containsKey(TRANS_WEIGHT_FIELD))
-			return config.getAsBoolean(TRANS_WEIGHT_FIELD);
+	net.ea.ann.mane.WeightSpec.Type paramGetWeightType() {
+		if (config.containsKey(WEIGHT_TYPE_FIELD))
+			return net.ea.ann.mane.WeightSpec.intToType(config.getAsInt(WEIGHT_TYPE_FIELD));
 		else
-			return TRANS_WEIGHT_DEFAULT;
+			return WEIGHT_TYPE_DEFAULT;
 	}
 	
 	
 	/**
-	 * Setting transformer-based weight mode.
-	 * @param transWeight transformer-based weight mode.
+	 * Setting weight type.
+	 * @param weightType weight type.
 	 * @return this classifier.
 	 */
-	VGG paramSetTransWeight(boolean transWeight) {
-		config.put(TRANS_WEIGHT_FIELD, transWeight);
+	VGG paramSetWeightType(net.ea.ann.mane.WeightSpec.Type weightType) {
+		config.put(WEIGHT_TYPE_FIELD, net.ea.ann.mane.WeightSpec.typeToInt(weightType));
 		return this;
 	}
 

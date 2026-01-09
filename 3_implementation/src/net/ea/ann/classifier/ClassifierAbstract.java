@@ -25,12 +25,15 @@ import net.ea.ann.core.value.Matrix;
 import net.ea.ann.core.value.MatrixUtil;
 import net.ea.ann.core.value.NeuronValue;
 import net.ea.ann.mane.Error;
+import net.ea.ann.mane.FilterSpec;
 import net.ea.ann.mane.MatrixNetworkAbstract;
 import net.ea.ann.mane.MatrixNetworkImpl;
 import net.ea.ann.mane.Record;
 import net.ea.ann.mane.TaskTrainerLossEntropy;
+import net.ea.ann.mane.WeightSpec;
+import net.ea.ann.mane.FilterSpec.PoolType;
+import net.ea.ann.mane.WeightSpec.Type;
 import net.ea.ann.mane.beans.VGG;
-import net.ea.ann.mane.filter.FilterSpec;
 import net.ea.ann.raster.Raster;
 import net.ea.ann.raster.RasterAbstract;
 import net.ea.ann.raster.RasterAssoc;
@@ -201,15 +204,27 @@ public abstract class ClassifierAbstract extends NetworkAbstract implements Clas
 
 	
 	/**
-	 * Field for transformer-based weight mode.
+	 * Field for pool type.
 	 */
-	public final static String TRANS_WEIGHT_FIELD = VGG.TRANS_WEIGHT_FIELD;
+	public final static String POOL_TYPE_FIELD = VGG.POOL_TYPE_FIELD;
 	
 	
 	/**
-	 * Default value for transformer-based weight mode.
+	 * Default value for pool type.
 	 */
-	public final static boolean TRANS_WEIGHT_DEFAULT = VGG.TRANS_WEIGHT_DEFAULT;
+	public final static PoolType POOL_TYPE_DEFAULT = VGG.POOL_TYPE_DEFAULT;
+
+	
+	/**
+	 * Field for weight type.
+	 */
+	public final static String WEIGHT_TYPE_FIELD = VGG.WEIGHT_TYPE_FIELD;
+	
+	
+	/**
+	 * Default value for weight type.
+	 */
+	public final static Type WEIGHT_TYPE_DEFAULT = VGG.WEIGHT_TYPE_DEFAULT;
 
 	
 	/**
@@ -271,7 +286,7 @@ public abstract class ClassifierAbstract extends NetworkAbstract implements Clas
 		config.put(DUAL_FIELD, DUAL_DEFAULT);
 		config.put(BASELINE_FIELD, BASELINE_DEFAULT);
 		config.put(ADJUST_FIELD, ADJUST_DEFAULT);
-		config.put(MatrixNetworkImpl.MIDSIZE_FIELD, MatrixNetworkImpl.MIDSIZE_DEFAULT);
+		config.put(MatrixNetworkImpl.MIDDLE_SIZE_DEFAULT_FIELD, MatrixNetworkImpl.MIDDLE_SIZE_DEFAULT_DEFAULT);
 		config.put(SAMPLE_WEIGHT_FIELD, SAMPLE_WEIGHT_DEFAULT);
 		config.put(ENTROPY_TRAINER_FIELD, ENTROPY_TRAINER_DEFAULT);
 		config.put(CREATE_ADJUSTER_FIELD, CREATE_ADJUSTER_DEFAULT);
@@ -1509,10 +1524,10 @@ public abstract class ClassifierAbstract extends NetworkAbstract implements Clas
 	 * @return middle size.
 	 */
 	public int paramGetMiddleSize() {
-		if (config.containsKey(MatrixNetworkImpl.MIDSIZE_FIELD))
-			return config.getAsInt(MatrixNetworkImpl.MIDSIZE_FIELD);
+		if (config.containsKey(MatrixNetworkImpl.MIDDLE_SIZE_DEFAULT_FIELD))
+			return config.getAsInt(MatrixNetworkImpl.MIDDLE_SIZE_DEFAULT_FIELD);
 		else
-			return MatrixNetworkImpl.MIDSIZE_DEFAULT;
+			return MatrixNetworkImpl.MIDDLE_SIZE_DEFAULT_DEFAULT;
 	}
 	
 	
@@ -1522,7 +1537,7 @@ public abstract class ClassifierAbstract extends NetworkAbstract implements Clas
 	 * @return this classifier.
 	 */
 	public ClassifierAbstract paramSetMiddleSize(int minSize) {
-		config.put(MatrixNetworkImpl.MIDSIZE_FIELD, minSize);
+		config.put(MatrixNetworkImpl.MIDDLE_SIZE_DEFAULT_FIELD, minSize);
 		return this;
 	}
 
@@ -1619,24 +1634,47 @@ public abstract class ClassifierAbstract extends NetworkAbstract implements Clas
 
 
 	/**
-	 * Checking transformer-based weight mode.
-	 * @return transformer-based weight mode.
+	 * Checking pooling filter type.
+	 * @return pooling filter type.
 	 */
-	boolean paramIsTransWeight() {
-		if (config.containsKey(TRANS_WEIGHT_FIELD))
-			return config.getAsBoolean(TRANS_WEIGHT_FIELD);
+	PoolType paramGetPoolType() {
+		if (config.containsKey(POOL_TYPE_FIELD))
+			return FilterSpec.intToPoolType(config.getAsInt(POOL_TYPE_FIELD));
 		else
-			return TRANS_WEIGHT_DEFAULT;
+			return POOL_TYPE_DEFAULT;
 	}
 	
 	
 	/**
-	 * Setting transformer-based weight mode.
-	 * @param transWeight transformer-based weight mode.
+	 * Setting pooling filter type.
+	 * @param poolType pooling filter type.
 	 * @return this classifier.
 	 */
-	ClassifierAbstract paramSetTransWeight(boolean transWeight) {
-		config.put(TRANS_WEIGHT_FIELD, transWeight);
+	ClassifierAbstract paramSetPoolType(PoolType poolType) {
+		config.put(POOL_TYPE_FIELD, FilterSpec.poolTypeToInt(poolType));
+		return this;
+	}
+
+	
+	/**
+	 * Getting weight type.
+	 * @return weight type.
+	 */
+	Type paramGetWeightType() {
+		if (config.containsKey(WEIGHT_TYPE_FIELD))
+			return WeightSpec.intToType(config.getAsInt(WEIGHT_TYPE_FIELD));
+		else
+			return WEIGHT_TYPE_DEFAULT;
+	}
+	
+	
+	/**
+	 * Setting weight type.
+	 * @param weightType weight type.
+	 * @return this classifier.
+	 */
+	ClassifierAbstract paramSetWeightType(Type weightType) {
+		config.put(WEIGHT_TYPE_FIELD, WeightSpec.typeToInt(weightType));
 		return this;
 	}
 
