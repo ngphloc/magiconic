@@ -146,7 +146,7 @@ public class MatrixLayerAssoc implements Cloneable, Serializable {
 	 * @return convolutional layer.
 	 */
 	ConvLayerSingle2D newConvLayer(int width, int height) {
-		return ConvLayer2DImpl.create(layer.neuronChannel, layer.convActivateRef, width, height, null, layer.getIdRef());
+		return ConvLayer2DImpl.create(layer.neuronChannel, layer.getFilterActivateRef(), width, height, null, layer.getIdRef());
 	}
 
 	
