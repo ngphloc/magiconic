@@ -12,6 +12,8 @@ import java.io.Serializable;
 import net.ea.ann.core.value.NeuronValue;
 import net.ea.ann.core.value.NeuronValueCreator;
 import net.ea.ann.mane.MatrixLayerAbstract.LayerSpec;
+import net.ea.ann.mane.weight.ActivateFWeight;
+import net.ea.ann.mane.weight.ActivateWWeight;
 import net.ea.ann.mane.weight.NullWeight;
 import net.ea.ann.mane.weight.TransformerWeight;
 import net.ea.ann.mane.weight.WeightImpl;
@@ -70,6 +72,16 @@ public class WeightSpec implements Cloneable, Serializable {
 		 * Transformer-based kernel.
 		 */
 		transformer,
+		
+		/**
+		 * Filter activation type which is like null type but having filter activation function.
+		 */
+		filter_activate,
+		
+		/**
+		 * Weight activation type which is like null type but having weight activation function.
+		 */
+		weight_activate,
 		
 		/**
 		 * Null type.
@@ -186,6 +198,15 @@ public class WeightSpec implements Cloneable, Serializable {
 		case 1:
 			kernelType = KernelType.transformer;
 			break;
+		case 2:
+			kernelType = KernelType.filter_activate;
+			break;
+		case 3:
+			kernelType = KernelType.weight_activate;
+			break;
+		case 4:
+			kernelType = KernelType.nil;
+			break;
 		default:
 			kernelType = KernelType.normal;
 			break;
@@ -271,6 +292,12 @@ public class WeightSpec implements Cloneable, Serializable {
 			case transformer:
 				weight = TransformerWeight.create(neuronChannel, prevSize, size);
 				break;
+			case filter_activate:
+				weight = new ActivateFWeight();
+				break;
+			case weight_activate:
+				weight = new ActivateWWeight();
+				break;
 			case nil:
 				weight = new NullWeight();
 				break;
@@ -323,7 +350,21 @@ public class WeightSpec implements Cloneable, Serializable {
 	 * @param hint hinting value.
 	 * @return normal weight.
 	 */
-	static Weight newWeight(Size prevSize, Size size, NeuronValue hint) {return newWeight(prevSize, size, hint, null, 0);}
+	static Weight newWeight(Size prevSize, Size size, NeuronValue hint) {
+		return newWeight(prevSize, size, hint, (LayerSpec)null, 0);
+	}
+	
+	
+	/**
+	 * Creating weight.
+	 * @param prevSize previous size.
+	 * @param size current size.
+	 * @param neuronChannel neuron channel which is only applied to network weight.
+	 * @return weight.
+	 */
+	static Weight newWeight(Size prevSize, Size size, int neuronChannel) {
+		return newWeight(prevSize, size, null, (LayerSpec)null, neuronChannel);
+	}
 	
 	
 	/**
@@ -333,4 +374,81 @@ public class WeightSpec implements Cloneable, Serializable {
 	static Weight newWeight() {return new NullWeight();}
 
 
+	/**
+	 * Creating weight.
+	 * @param prevSize previous size.
+	 * @param size current size.
+	 * @param hint hinting value.
+	 * @param weightSpec weight specification, which can be null.
+	 * @param neuronChannel neuron channel which is only applied to network weight.
+	 * @return weight.
+	 */
+	public static Weight newWeight(Size prevSize, Size size, NeuronValue hint, WeightSpec weightSpec, int neuronChannel) {
+		if (prevSize == null && size == null && weightSpec == null) return new NullWeight();
+		if (prevSize != null && size != null && weightSpec == null)
+			return WeightImpl.create(prevSize, size, hint);
+		
+		if (prevSize == null || size == null || weightSpec == null) throw new IllegalArgumentException();
+		
+		Weight weight = null;
+		switch (weightSpec.type) {
+		case kernel:
+			switch (weightSpec.kernelType) {
+			case normal:
+				weight = WeightImpl.create(prevSize, size, hint);
+				break;
+			case transformer:
+				weight = TransformerWeight.create(neuronChannel, prevSize, size);
+				break;
+			case filter_activate:
+				weight = new ActivateFWeight();
+				break;
+			case weight_activate:
+				weight = new ActivateWWeight();
+				break;
+			case nil:
+				weight = new NullWeight();
+				break;
+			default:
+				weight = WeightImpl.create(prevSize, size, hint);
+				break;
+			}
+			break;
+		case network:
+			throw new IllegalArgumentException();
+		default:
+			weight = WeightImpl.create(prevSize, size, hint);
+			break;
+		}
+		return weight;
+	}
+
+
+	/**
+	 * Creating weight.
+	 * @param prevSize previous size.
+	 * @param size current size.
+	 * @param hint hinting value.
+	 * @param weightSpec weight specification, which can be null.
+	 * @param neuronChannel neuron channel which is only applied to network weight.
+	 * @return weight.
+	 */
+	static Weight newWeight(Size prevSize, Size size, NeuronValue hint, WeightSpec weightSpec) {
+		return newWeight(prevSize, size, hint, weightSpec, 0);
+	}
+	
+	
+	/**
+	 * Creating weight.
+	 * @param prevSize previous size.
+	 * @param size current size.
+	 * @param weightSpec weight specification, which can be null.
+	 * @param neuronChannel neuron channel which is only applied to network weight.
+	 * @return weight.
+	 */
+	static Weight newWeight(Size prevSize, Size size, WeightSpec weightSpec, int neuronChannel) {
+		return newWeight(prevSize, size, null, weightSpec, neuronChannel);
+	}
+	
+	
 }
