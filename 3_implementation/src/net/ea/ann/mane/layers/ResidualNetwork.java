@@ -5,7 +5,7 @@
  * Email: ng_phloc@yahoo.com
  * Phone: +84-975250362
  */
-package net.ea.ann.mane;
+package net.ea.ann.mane.layers;
 
 import java.util.List;
 
@@ -15,7 +15,7 @@ import net.ea.ann.core.function.Function;
 import net.ea.ann.core.value.Matrix;
 import net.ea.ann.core.value.MatrixStack;
 import net.ea.ann.core.value.MatrixUtil;
-import net.ea.ann.mane.weight.NullWeight;
+import net.ea.ann.mane.MatrixLayerAbstract;
 
 /**
  * This class represents residual network (residual connection).
@@ -97,18 +97,21 @@ public class ResidualNetwork extends DropoutNetwork {
 	 */
 	private MatrixLayerAbstract findStartLayer(MatrixLayerAbstract residualLayer) {
 		if (residualLayer == null || residualLayer == getInputLayer()) return null;
-		MatrixLayerAbstract layer = residualLayer, prevLayer = null, found = null;
+		MatrixLayerAbstract layer = residualLayer, prevLayer = null, strictFound = null, found = null;
 		Matrix output = residualLayer.queryOutput();
 		while ((prevLayer = layer.getPrevLayer()) != null) {
 			if (prevLayer.getEndLayer() != null) break;
 			Matrix input = prevLayer.queryOutput(); //Please pay attention to this code line.
-			if (checkInoutputSameSize(input, output) &&
-				!(prevLayer instanceof ResidualLayer && prevLayer.getWeight() != null && prevLayer.getWeight() instanceof NullWeight) && //It is possible to remove this condition.
-				!(prevLayer instanceof DropoutLayer)) //It is possible to remove this condition.
+			if (checkInoutputSameSize(input, output)) {
+				if (!(prevLayer instanceof ResidualLayer) && !(prevLayer instanceof DropoutLayer))
+					strictFound = found = prevLayer;
+				else
 					found = prevLayer;
+			}
 			layer = prevLayer;
 		}
-		return found;
+		
+		return strictFound != null ? strictFound : found;
 	}
 	
 	
