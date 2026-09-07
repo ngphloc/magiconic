@@ -95,7 +95,7 @@ abstract class FilterNetwork extends ParameterNetwork implements NetworkFilter {
 
 	
 	@Override
-	public Filter accumKernel(Kernel dKernel, double factor) {return this;}
+	public Filter accumKernel(Kernel dKernel, double factor, double decay) {return this;}
 
 	
 	/**
