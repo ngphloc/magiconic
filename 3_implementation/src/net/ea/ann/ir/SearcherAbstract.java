@@ -85,7 +85,7 @@ public abstract class SearcherAbstract<T extends Feature> implements Searcher<T>
 		List<ScoredFeature<T>> result = Util.newList(0);
 		for (T feature : searchSpace) {
 			if (maxFound > 0 && result.size() >= maxFound) break;
-
+			
 			double score = feature.sim(query).mean();
 			boolean found = false;
 			for (int i = result.size() - 1; i >= 0; i--) {
